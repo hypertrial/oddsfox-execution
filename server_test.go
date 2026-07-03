@@ -36,6 +36,26 @@ func TestSubscriptionsAPI(t *testing.T) {
 	}
 }
 
+func TestKnockoutSnapshotAPI(t *testing.T) {
+	hub := NewHub(nil)
+	server := NewAPIServer(hub, nil).WithKnockout(
+		NewKnockoutService(testKnockoutArtifact(), hub, NewSportsState(), ""),
+	)
+	req := httptest.NewRequest(http.MethodGet, "/api/v0/knockout/snapshot", nil)
+	rec := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var body KnockoutSnapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Competition != "wc2026" {
+		t.Fatalf("unexpected body: %+v", body)
+	}
+}
+
 func stringsJoin(values []string) string {
 	if len(values) == 0 {
 		return ""

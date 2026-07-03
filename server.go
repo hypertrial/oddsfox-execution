@@ -10,12 +10,18 @@ import (
 )
 
 type APIServer struct {
-	hub    *Hub
-	client *MarketClient
+	hub      *Hub
+	client   *MarketClient
+	knockout *KnockoutService
 }
 
 func NewAPIServer(hub *Hub, client *MarketClient) *APIServer {
 	return &APIServer{hub: hub, client: client}
+}
+
+func (s *APIServer) WithKnockout(knockout *KnockoutService) *APIServer {
+	s.knockout = knockout
+	return s
 }
 
 func (s *APIServer) Routes() http.Handler {
@@ -23,6 +29,7 @@ func (s *APIServer) Routes() http.Handler {
 	mux.HandleFunc("/api/v0/health", s.handleHealth)
 	mux.HandleFunc("/api/v0/subscriptions", s.handleSubscriptions)
 	mux.HandleFunc("/api/v0/graph/snapshot", s.handleSnapshot)
+	mux.HandleFunc("/api/v0/knockout/snapshot", s.handleKnockoutSnapshot)
 	mux.HandleFunc("/api/v0/stream", s.handleStream)
 	mux.HandleFunc("/api/v0/replay/events", s.handleReplay)
 	return withCORS(mux)
@@ -56,6 +63,14 @@ func (s *APIServer) handleSubscriptions(w http.ResponseWriter, r *http.Request) 
 
 func (s *APIServer) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, s.hub.Snapshot())
+}
+
+func (s *APIServer) handleKnockoutSnapshot(w http.ResponseWriter, r *http.Request) {
+	if s.knockout == nil {
+		http.Error(w, "knockout artifact not configured", http.StatusNotFound)
+		return
+	}
+	writeJSONResponse(w, s.knockout.Snapshot())
 }
 
 func (s *APIServer) handleReplay(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +112,9 @@ func (s *APIServer) handleStream(w http.ResponseWriter, r *http.Request) {
 			return
 		case event := <-ch:
 			writeSSE(w, "event", event)
+			if s.knockout != nil && (event.Type == "sports_update" || event.AssetID != "") {
+				writeSSE(w, "knockout_snapshot", s.knockout.Snapshot())
+			}
 			flusher.Flush()
 		case <-ticker.C:
 			fmt.Fprint(w, ": ping\n\n")

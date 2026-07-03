@@ -140,6 +140,16 @@ func (h *Hub) Snapshot() GraphSnapshot {
 	}
 }
 
+func (h *Hub) AssetStates() map[string]AssetState {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := make(map[string]AssetState, len(h.assets))
+	for id, asset := range h.assets {
+		out[id] = *asset
+	}
+	return out
+}
+
 func (h *Hub) RecentEvents(limit int) []LiveEvent {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -202,9 +212,18 @@ func (h *Hub) handleObject(obj map[string]any) {
 	}
 
 	h.mu.Lock()
+	h.applyObjectLocked(now, eventType, obj)
+	h.mu.Unlock()
+	h.Publish(event)
+}
+
+func (h *Hub) Publish(event LiveEvent) {
+	h.mu.Lock()
 	h.seq++
 	event.ID = fmt.Sprintf("%d", h.seq)
-	h.applyObjectLocked(now, eventType, obj)
+	if event.ReceivedAt.IsZero() {
+		event.ReceivedAt = time.Now().UTC()
+	}
 	h.events = append(h.events, event)
 	if len(h.events) > 1000 {
 		h.events = h.events[len(h.events)-1000:]
