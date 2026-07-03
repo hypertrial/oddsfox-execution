@@ -53,6 +53,17 @@ func TestMarketClientSubscribesAndReconnects(t *testing.T) {
 	assertWriteContains(t, second.writes, `"type":"market"`)
 }
 
+func TestMarketClientSubscribeAssetsUsesMarketPayload(t *testing.T) {
+	conn := newFakeConn()
+	client := NewMarketClient("ws://example", func() []string { return nil }, func([]byte) {}, func(bool, string) {})
+	client.conn = conn
+
+	if err := client.SubscribeAssets(context.Background(), []string{"asset-b"}); err != nil {
+		t.Fatal(err)
+	}
+	assertWriteContains(t, conn.writes, `"type":"market"`)
+}
+
 func assertWriteContains(t *testing.T, writes <-chan []byte, want string) {
 	t.Helper()
 	select {

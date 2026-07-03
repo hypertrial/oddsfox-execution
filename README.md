@@ -18,6 +18,7 @@ The server listens on `http://127.0.0.1:8787` by default.
 - `POST /api/v0/subscriptions` with `{ "asset_ids": ["..."] }`
 - `GET /api/v0/graph/snapshot`
 - `GET /api/v0/knockout/snapshot`
+- `GET /api/v0/knockout/timeseries?stage=winner&metric=stage_probability`
 - `GET /api/v0/stream`
 - `GET /api/v0/replay/events?limit=100`
 

@@ -87,6 +87,7 @@ func (c *MarketClient) SubscribeAssets(ctx context.Context, assetIDs []string) e
 	return writeJSON(ctx, conn, map[string]any{
 		"operation":              "subscribe",
 		"assets_ids":             assetIDs,
+		"type":                   "market",
 		"custom_feature_enabled": true,
 	})
 }

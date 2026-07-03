@@ -30,6 +30,7 @@ func (s *APIServer) Routes() http.Handler {
 	mux.HandleFunc("/api/v0/subscriptions", s.handleSubscriptions)
 	mux.HandleFunc("/api/v0/graph/snapshot", s.handleSnapshot)
 	mux.HandleFunc("/api/v0/knockout/snapshot", s.handleKnockoutSnapshot)
+	mux.HandleFunc("/api/v0/knockout/timeseries", s.handleKnockoutTimeseries)
 	mux.HandleFunc("/api/v0/stream", s.handleStream)
 	mux.HandleFunc("/api/v0/replay/events", s.handleReplay)
 	return withCORS(mux)
@@ -71,6 +72,14 @@ func (s *APIServer) handleKnockoutSnapshot(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSONResponse(w, s.knockout.Snapshot())
+}
+
+func (s *APIServer) handleKnockoutTimeseries(w http.ResponseWriter, r *http.Request) {
+	if s.knockout == nil {
+		http.Error(w, "knockout artifact not configured", http.StatusNotFound)
+		return
+	}
+	writeJSONResponse(w, s.knockout.Timeseries(r.URL.Query()))
 }
 
 func (s *APIServer) handleReplay(w http.ResponseWriter, r *http.Request) {

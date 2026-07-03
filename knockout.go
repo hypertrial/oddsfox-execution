@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"math"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -19,6 +20,8 @@ type KnockoutArtifact struct {
 	Teams                    []KnockoutTeam           `json:"teams"`
 	TeamStageMarkets         []TeamStageMarket        `json:"team_stage_markets"`
 	ConditionalProbabilities []ConditionalProbability `json:"conditional_probabilities"`
+	TeamStageHourly          []TeamStageHourly        `json:"team_stage_probabilities_hourly"`
+	ConditionalHourly        []ConditionalHourly      `json:"conditional_probabilities_hourly"`
 	BracketSlots             []BracketSlot            `json:"bracket_slots"`
 	AssetIDs                 []string                 `json:"asset_ids"`
 }
@@ -42,6 +45,8 @@ type TeamStageMarket struct {
 	StageRank           int      `json:"stage_rank"`
 	NodeID              string   `json:"node_id"`
 	AssetID             string   `json:"asset_id"`
+	YesAssetID          string   `json:"yes_asset_id"`
+	NoAssetID           string   `json:"no_asset_id"`
 	MarketID            string   `json:"market_id"`
 	Question            string   `json:"question"`
 	EventSlug           string   `json:"event_slug"`
@@ -57,6 +62,29 @@ type ConditionalProbability struct {
 	ToStage     string   `json:"to_stage"`
 	Probability *float64 `json:"probability"`
 	Method      string   `json:"method"`
+}
+
+type TeamStageHourly struct {
+	TeamID        string   `json:"team_id"`
+	Team          string   `json:"team"`
+	StageKey      string   `json:"stage_key"`
+	HourUTC       string   `json:"hour_utc"`
+	HourEpoch     int64    `json:"hour_epoch"`
+	Probability   *float64 `json:"probability"`
+	Source        string   `json:"source"`
+	StaleAgeHours *int     `json:"stale_age_hours"`
+}
+
+type ConditionalHourly struct {
+	TeamID        string   `json:"team_id"`
+	Team          string   `json:"team"`
+	FromStage     string   `json:"from_stage"`
+	ToStage       string   `json:"to_stage"`
+	HourUTC       string   `json:"hour_utc"`
+	HourEpoch     int64    `json:"hour_epoch"`
+	Probability   *float64 `json:"probability"`
+	Method        string   `json:"method"`
+	StaleAgeHours *int     `json:"stale_age_hours"`
 }
 
 type BracketSlot struct {
@@ -101,6 +129,43 @@ type TeamProbability struct {
 	AssetID     string   `json:"asset_id"`
 	MarketID    string   `json:"market_id"`
 	UpdatedAt   string   `json:"updated_at,omitempty"`
+}
+
+type KnockoutTimeseries struct {
+	Version       string             `json:"version"`
+	UpdatedAt     time.Time          `json:"updated_at"`
+	Competition   string             `json:"competition"`
+	StageKey      string             `json:"stage_key"`
+	Metric        string             `json:"metric"`
+	FromStage     string             `json:"from_stage,omitempty"`
+	Hours         []string           `json:"hours"`
+	Series        []TimeseriesSeries `json:"series"`
+	ResultMarkers []ResultMarker     `json:"result_markers"`
+	Sources       map[string]string  `json:"sources"`
+	Warnings      []string           `json:"warnings"`
+}
+
+type TimeseriesSeries struct {
+	TeamID string            `json:"team_id"`
+	Team   string            `json:"team"`
+	Points []TimeseriesPoint `json:"points"`
+}
+
+type TimeseriesPoint struct {
+	HourUTC       string   `json:"hour_utc"`
+	Probability   *float64 `json:"probability"`
+	Source        string   `json:"source"`
+	StaleAgeHours *int     `json:"stale_age_hours"`
+	ResultForced  bool     `json:"result_forced"`
+}
+
+type ResultMarker struct {
+	HourUTC      string `json:"hour_utc"`
+	StageKey     string `json:"stage_key"`
+	WinnerTeamID string `json:"winner_team_id,omitempty"`
+	Status       string `json:"status,omitempty"`
+	Score        string `json:"score,omitempty"`
+	Source       string `json:"source,omitempty"`
 }
 
 type ResultsOverride struct {
@@ -187,13 +252,149 @@ func (s *KnockoutService) Snapshot() KnockoutSnapshot {
 	}
 }
 
-func (s *KnockoutService) marketProbability(market TeamStageMarket, assets map[string]AssetState) (*float64, string, string) {
-	if asset, ok := assets[market.AssetID]; ok {
-		if value, ok := midpoint(asset.BestBid, asset.BestAsk); ok {
-			return &value, "live_midpoint", asset.UpdatedAt.Format(time.RFC3339)
+func (s *KnockoutService) Timeseries(query url.Values) KnockoutTimeseries {
+	warnings := s.loadOverrides()
+	stage := query.Get("stage")
+	if stage == "" {
+		stage = "winner"
+	}
+	if !hasStage(s.artifact.Stages, stage) {
+		warnings = append(warnings, "unknown stage "+stage+", using winner")
+		stage = "winner"
+	}
+	metric := query.Get("metric")
+	if metric == "" {
+		metric = "stage_probability"
+	}
+	if metric != "stage_probability" && metric != "conditional_probability" {
+		warnings = append(warnings, "unknown metric "+metric+", using stage_probability")
+		metric = "stage_probability"
+	}
+	fromStage := query.Get("from_stage")
+	if metric == "conditional_probability" && fromStage == "" {
+		fromStage = previousStage(s.artifact.Stages, stage)
+	}
+	limit := parseLimit(query.Get("limit_teams"), 12)
+	pinned := splitQueryIDs(query.Get("team_id"))
+	results := s.results()
+	points := s.timeseriesPoints(stage, metric, fromStage)
+	points = s.overlayCurrentHour(points, stage, metric, fromStage)
+	points = applyResultForcing(points, stage, metric, fromStage, s.resultForces(results))
+	series := selectTimeseries(points, s.artifact.Teams, pinned, limit)
+	return KnockoutTimeseries{
+		Version:       apiVersion,
+		UpdatedAt:     time.Now().UTC(),
+		Competition:   s.artifact.Competition,
+		StageKey:      stage,
+		Metric:        metric,
+		FromStage:     fromStage,
+		Hours:         seriesHours(series),
+		Series:        series,
+		ResultMarkers: s.resultMarkers(results),
+		Sources: map[string]string{
+			"artifact_built_at": s.artifact.BuiltAt,
+			"artifact_manifest": s.artifact.SourceManifest,
+		},
+		Warnings: dedupe(warnings),
+	}
+}
+
+func (s *KnockoutService) timeseriesPoints(stage, metric, fromStage string) map[string][]TimeseriesPoint {
+	out := map[string][]TimeseriesPoint{}
+	if metric == "conditional_probability" {
+		for _, row := range s.artifact.ConditionalHourly {
+			if row.ToStage != stage || row.FromStage != fromStage {
+				continue
+			}
+			out[row.TeamID] = append(out[row.TeamID], TimeseriesPoint{
+				HourUTC:       row.HourUTC,
+				Probability:   cloneFloat(row.Probability),
+				Source:        firstNonEmpty(row.Method, "market_ratio"),
+				StaleAgeHours: cloneInt(row.StaleAgeHours),
+			})
 		}
-		if value, ok := parseProbability(asset.LastPrice); ok {
-			return &value, "last_trade_price", asset.UpdatedAt.Format(time.RFC3339)
+		return sortPointMap(out)
+	}
+	for _, row := range s.artifact.TeamStageHourly {
+		if row.StageKey != stage {
+			continue
+		}
+		out[row.TeamID] = append(out[row.TeamID], TimeseriesPoint{
+			HourUTC:       row.HourUTC,
+			Probability:   cloneFloat(row.Probability),
+			Source:        row.Source,
+			StaleAgeHours: cloneInt(row.StaleAgeHours),
+		})
+	}
+	return sortPointMap(out)
+}
+
+func (s *KnockoutService) overlayCurrentHour(points map[string][]TimeseriesPoint, stage, metric, fromStage string) map[string][]TimeseriesPoint {
+	hour := time.Now().UTC().Truncate(time.Hour).Format(time.RFC3339)
+	if metric == "conditional_probability" {
+		for _, team := range s.artifact.Teams {
+			toProb, toSource := s.currentStageProbability(team.TeamID, stage)
+			fromProb, fromSource := s.currentStageProbability(team.TeamID, fromStage)
+			probability := ratioPtr(toProb, fromProb)
+			if probability == nil || (!isLiveSource(toSource) && !isLiveSource(fromSource)) {
+				continue
+			}
+			points[team.TeamID] = upsertPoint(points[team.TeamID], TimeseriesPoint{
+				HourUTC:      hour,
+				Probability:  probability,
+				Source:       "live_ratio",
+				ResultForced: false,
+			})
+		}
+		return sortPointMap(points)
+	}
+	for _, market := range s.artifact.TeamStageMarkets {
+		if market.StageKey != stage {
+			continue
+		}
+		probability, source, _ := s.marketProbability(market, s.hub.AssetStates())
+		if probability == nil || !isLiveSource(source) {
+			continue
+		}
+		points[market.TeamID] = upsertPoint(points[market.TeamID], TimeseriesPoint{
+			HourUTC:      hour,
+			Probability:  cloneFloat(probability),
+			Source:       source,
+			ResultForced: false,
+		})
+	}
+	return sortPointMap(points)
+}
+
+func (s *KnockoutService) currentStageProbability(teamID, stage string) (*float64, string) {
+	if stage == "" {
+		return nil, "missing"
+	}
+	assets := s.hub.AssetStates()
+	for _, market := range s.artifact.TeamStageMarkets {
+		if market.TeamID == teamID && market.StageKey == stage {
+			probability, source, _ := s.marketProbability(market, assets)
+			return probability, source
+		}
+	}
+	return nil, "missing"
+}
+
+func (s *KnockoutService) marketProbability(market TeamStageMarket, assets map[string]AssetState) (*float64, string, string) {
+	yesID := firstNonEmpty(market.YesAssetID, market.AssetID)
+	yes, ok := assets[yesID]
+	if ok {
+		if value, updatedAt, ok := liveDevigMidpoint(yes, assets[market.NoAssetID]); ok {
+			return &value, "live_devig_midpoint", updatedAt
+		}
+		if value, ok := midpoint(yes.BestBid, yes.BestAsk); ok {
+			return &value, "live_midpoint", yes.UpdatedAt.Format(time.RFC3339)
+		}
+		if value, updatedAt, ok := liveDevigLastTrade(yes, assets[market.NoAssetID]); ok {
+			return &value, "live_devig_last_trade", updatedAt
+		}
+		if value, ok := parseProbability(yes.LastPrice); ok {
+			return &value, "last_trade_price", yes.UpdatedAt.Format(time.RFC3339)
 		}
 	}
 	if market.BaselineProbability != nil {
@@ -201,6 +402,31 @@ func (s *KnockoutService) marketProbability(market TeamStageMarket, assets map[s
 		return &value, "artifact_" + market.ProbabilitySource, ""
 	}
 	return nil, "missing", ""
+}
+
+func liveDevigMidpoint(yes AssetState, no AssetState) (float64, string, bool) {
+	yesMid, okYes := midpoint(yes.BestBid, yes.BestAsk)
+	noMid, okNo := midpoint(no.BestBid, no.BestAsk)
+	if !okYes || !okNo || yesMid+noMid <= 0 {
+		return 0, "", false
+	}
+	return clamp(yesMid / (yesMid + noMid)), latestTimestamp(yes.UpdatedAt, no.UpdatedAt), true
+}
+
+func liveDevigLastTrade(yes AssetState, no AssetState) (float64, string, bool) {
+	yesPrice, okYes := parseProbability(yes.LastPrice)
+	noPrice, okNo := parseProbability(no.LastPrice)
+	if !okYes || !okNo || yesPrice+noPrice <= 0 {
+		return 0, "", false
+	}
+	return clamp(yesPrice / (yesPrice + noPrice)), latestTimestamp(yes.UpdatedAt, no.UpdatedAt), true
+}
+
+func latestTimestamp(a, b time.Time) string {
+	if b.After(a) {
+		return b.Format(time.RFC3339)
+	}
+	return a.Format(time.RFC3339)
 }
 
 func (s *KnockoutService) loadOverrides() []string {
@@ -288,6 +514,161 @@ func (s *KnockoutService) resultProbabilities(results []MatchResult) map[string]
 	return out
 }
 
+type resultForce struct {
+	TeamID  string
+	Stage   string
+	HourUTC string
+	Value   float64
+}
+
+func (s *KnockoutService) resultForces(results []MatchResult) []resultForce {
+	var out []resultForce
+	for _, result := range results {
+		if result.WinnerTeamID == "" || len(result.TeamIDs) == 0 {
+			continue
+		}
+		current := slotStage(s.artifact.BracketSlots, result)
+		if current == "" {
+			continue
+		}
+		hour := resultHour(result)
+		next := nextStage(s.artifact.Stages, current)
+		nextRank := stageRank(s.artifact.Stages, next)
+		for _, teamID := range result.TeamIDs {
+			out = append(out, resultForce{TeamID: teamID, Stage: current, HourUTC: hour, Value: 1})
+			if next == "" {
+				continue
+			}
+			if teamID == result.WinnerTeamID {
+				out = append(out, resultForce{TeamID: teamID, Stage: next, HourUTC: hour, Value: 1})
+				continue
+			}
+			out = append(out, resultForce{TeamID: teamID, Stage: next, HourUTC: hour, Value: 0})
+			for _, stage := range s.artifact.Stages {
+				if stage.Rank > nextRank {
+					out = append(out, resultForce{TeamID: teamID, Stage: stage.Key, HourUTC: hour, Value: 0})
+				}
+			}
+		}
+	}
+	return out
+}
+
+func (s *KnockoutService) resultMarkers(results []MatchResult) []ResultMarker {
+	markers := make([]ResultMarker, 0, len(results))
+	for _, result := range results {
+		stage := slotStage(s.artifact.BracketSlots, result)
+		if stage == "" {
+			continue
+		}
+		markers = append(markers, ResultMarker{
+			HourUTC:      resultHour(result),
+			StageKey:     stage,
+			WinnerTeamID: result.WinnerTeamID,
+			Status:       result.Status,
+			Score:        result.Score,
+			Source:       result.Source,
+		})
+	}
+	sort.Slice(markers, func(i, j int) bool { return markers[i].HourUTC < markers[j].HourUTC })
+	return markers
+}
+
+func applyResultForcing(points map[string][]TimeseriesPoint, stage, metric, fromStage string, forces []resultForce) map[string][]TimeseriesPoint {
+	for _, force := range forces {
+		if force.Stage != stage && !(metric == "conditional_probability" && force.Stage == fromStage) {
+			continue
+		}
+		rows := points[force.TeamID]
+		for i := range rows {
+			if rows[i].HourUTC < force.HourUTC {
+				continue
+			}
+			value := force.Value
+			if metric == "conditional_probability" && force.Stage == fromStage {
+				if force.Value == 0 {
+					rows[i].Probability = nil
+					rows[i].Source = "result"
+					rows[i].ResultForced = true
+				}
+				continue
+			}
+			rows[i].Probability = &value
+			rows[i].Source = "result"
+			rows[i].ResultForced = true
+		}
+		points[force.TeamID] = rows
+	}
+	return points
+}
+
+func selectTimeseries(points map[string][]TimeseriesPoint, teams []KnockoutTeam, pinned []string, limit int) []TimeseriesSeries {
+	names := map[string]string{}
+	for _, team := range teams {
+		names[team.TeamID] = team.Name
+	}
+	ids := pinned
+	if len(ids) == 0 {
+		ids = topTeamIDs(points, limit)
+	}
+	out := make([]TimeseriesSeries, 0, len(ids))
+	for _, teamID := range ids {
+		rows := points[teamID]
+		if len(rows) == 0 {
+			continue
+		}
+		out = append(out, TimeseriesSeries{TeamID: teamID, Team: names[teamID], Points: rows})
+	}
+	return out
+}
+
+func topTeamIDs(points map[string][]TimeseriesPoint, limit int) []string {
+	type rank struct {
+		teamID string
+		value  float64
+	}
+	ranks := []rank{}
+	for teamID, rows := range points {
+		value := -1.0
+		for i := len(rows) - 1; i >= 0; i-- {
+			if rows[i].Probability != nil {
+				value = *rows[i].Probability
+				break
+			}
+		}
+		ranks = append(ranks, rank{teamID: teamID, value: value})
+	}
+	sort.Slice(ranks, func(i, j int) bool {
+		if ranks[i].value == ranks[j].value {
+			return ranks[i].teamID < ranks[j].teamID
+		}
+		return ranks[i].value > ranks[j].value
+	})
+	if limit > len(ranks) {
+		limit = len(ranks)
+	}
+	out := make([]string, 0, limit)
+	for _, row := range ranks[:limit] {
+		out = append(out, row.teamID)
+	}
+	return out
+}
+
+func seriesHours(series []TimeseriesSeries) []string {
+	seen := map[string]struct{}{}
+	for _, item := range series {
+		for _, point := range item.Points {
+			seen[point.HourUTC] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for hour := range seen {
+		out = append(out, hour)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func midpoint(bid, ask string) (float64, bool) {
 	b, okB := parseProbability(bid)
 	a, okA := parseProbability(ask)
@@ -353,11 +734,117 @@ func nextStage(stages []KnockoutStage, key string) string {
 	return ""
 }
 
+func previousStage(stages []KnockoutStage, key string) string {
+	rank := stageRank(stages, key)
+	prev := ""
+	prevRank := -1
+	for _, stage := range stages {
+		if stage.Rank < rank && stage.Rank > prevRank {
+			prev = stage.Key
+			prevRank = stage.Rank
+		}
+	}
+	return prev
+}
+
+func hasStage(stages []KnockoutStage, key string) bool {
+	return stageRank(stages, key) != 999
+}
+
 func resultKey(result MatchResult) string {
 	if result.SlotID != "" {
 		return "slot:" + result.SlotID
 	}
 	return "sports:" + result.SportsSlug
+}
+
+func resultHour(result MatchResult) string {
+	if result.UpdatedAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, result.UpdatedAt); err == nil {
+			return parsed.UTC().Truncate(time.Hour).Format(time.RFC3339)
+		}
+	}
+	return time.Now().UTC().Truncate(time.Hour).Format(time.RFC3339)
+}
+
+func parseLimit(value string, fallback int) int {
+	limit, err := strconv.Atoi(value)
+	if err != nil || limit <= 0 {
+		return fallback
+	}
+	if limit > 48 {
+		return 48
+	}
+	return limit
+}
+
+func splitQueryIDs(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		out = append(out, part)
+	}
+	return out
+}
+
+func sortPointMap(points map[string][]TimeseriesPoint) map[string][]TimeseriesPoint {
+	for teamID := range points {
+		sort.Slice(points[teamID], func(i, j int) bool {
+			return points[teamID][i].HourUTC < points[teamID][j].HourUTC
+		})
+	}
+	return points
+}
+
+func upsertPoint(points []TimeseriesPoint, point TimeseriesPoint) []TimeseriesPoint {
+	for i := range points {
+		if points[i].HourUTC == point.HourUTC {
+			points[i] = point
+			return points
+		}
+	}
+	return append(points, point)
+}
+
+func isLiveSource(source string) bool {
+	return strings.HasPrefix(source, "live_") || source == "last_trade_price"
+}
+
+func ratioPtr(later, base *float64) *float64 {
+	if later == nil || base == nil || *base <= 0 {
+		return nil
+	}
+	value := clamp(*later / *base)
+	return &value
+}
+
+func cloneFloat(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func dedupe(values []string) []string {
