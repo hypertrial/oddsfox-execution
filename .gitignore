@@ -27,6 +27,10 @@ go.work.sum
 # env file
 .env
 
+# local runtime output
+oddsfox-live
+replay/
+
 # Editor/IDE
 # .idea/
 # .vscode/
