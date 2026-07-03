@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 )
 
 type ReplayLog struct {
@@ -82,8 +81,4 @@ func ReadReplayEvents(dir string, limit int) []LiveEvent {
 		return out[i].ReceivedAt.Before(out[j].ReceivedAt)
 	})
 	return out
-}
-
-func todayReplayPath(dir string) string {
-	return filepath.Join(dir, time.Now().UTC().Format("2006-01-02")+".jsonl")
 }
