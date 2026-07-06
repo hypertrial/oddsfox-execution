@@ -2,6 +2,18 @@
 
 Local real-time backend for OddsFox dashboards.
 
+## Part Of OddsFox
+
+`oddsfox-live` serves the JSON/SSE API between hosted graph artifacts and
+`oddsfox-dash`. It reads `graph_snapshot.json` and `knockout_artifacts.json`
+from `oddsfox-graph` builds, merges live token state, and exposes the stable API
+documented in [docs/api.md](docs/api.md).
+
+For the full source-to-dashboard flow, see the
+[OddsFox System Overview](https://github.com/hypertrial/oddsfox-pipeline/blob/main/docs/system-overview.md)
+and
+[Operator Runbook](https://github.com/hypertrial/oddsfox-pipeline/blob/main/docs/operator-runbook.md).
+
 ## Run
 
 ```bash
@@ -33,6 +45,9 @@ Relevant flags/env:
 - `-artifact-reload-interval` / `ODDSFOX_ARTIFACT_RELOAD_INTERVAL`
 
 ## API
+
+See [docs/api.md](docs/api.md) for response fields, query parameters, SSE
+events, and artifact reload behavior.
 
 - `GET /api/v0/health`
 - `GET /api/v0/subscriptions`
