@@ -6,8 +6,8 @@ Local real-time backend for OddsFox dashboards.
 
 ```bash
 go run . -assets "<polymarket_asset_id_1>,<polymarket_asset_id_2>"
-go run . -knockout-artifact ../oddsfox-graph/output/wc2026/knockout_artifacts.json
-go run . -artifact-dir /artifacts
+go run . -knockout-artifact "$ODDSFOX_DATA_DIR/artifacts/current/knockout_artifacts.json"
+go run . -artifact-dir "$ODDSFOX_DATA_DIR/artifacts" -replay-dir "$ODDSFOX_DATA_DIR/replay"
 ```
 
 The server listens on `http://127.0.0.1:8787` by default.
@@ -54,9 +54,10 @@ violations, metadata, and live token state in one payload.
 From the OddsFox workspace root:
 
 ```bash
-docker compose build live
-docker compose up live
+cd oddsfox-pipeline
+docker compose --env-file deploy/hosted-graph/.env -f deploy/hosted-graph/docker-compose.yml build live
+docker compose --env-file deploy/hosted-graph/.env -f deploy/hosted-graph/docker-compose.yml up live
 ```
 
-The compose example mounts the shared `oddsfox-artifacts` volume at
-`/artifacts`.
+The compose example bind-mounts `$ODDSFOX_DATA_DIR/artifacts` at `/artifacts`
+and `$ODDSFOX_DATA_DIR/replay` at `/replay`.
