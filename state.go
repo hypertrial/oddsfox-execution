@@ -30,22 +30,66 @@ type AssetState struct {
 }
 
 type GraphEdge struct {
-	Source string `json:"source"`
-	Target string `json:"target"`
-	Type   string `json:"type"`
+	Source      string   `json:"source"`
+	Target      string   `json:"target"`
+	Type        string   `json:"type"`
+	Basis       string   `json:"basis,omitempty"`
+	Confidence  *float64 `json:"confidence,omitempty"`
+	CurrentPSrc *float64 `json:"current_p_src,omitempty"`
+	CurrentPDst *float64 `json:"current_p_dst,omitempty"`
 }
 
 type Violation struct {
-	ID      string `json:"id"`
-	Message string `json:"message"`
+	ID          string `json:"id"`
+	Type        string `json:"type,omitempty"`
+	Severity    string `json:"severity,omitempty"`
+	Message     string `json:"message"`
+	Description string `json:"description,omitempty"`
+	SrcNodeID   string `json:"src_node_id,omitempty"`
+	DstNodeID   string `json:"dst_node_id,omitempty"`
+	MarketIDSrc string `json:"market_id_src,omitempty"`
+	MarketIDDst string `json:"market_id_dst,omitempty"`
+}
+
+type GraphNode struct {
+	NodeID               string   `json:"node_id"`
+	MarketID             string   `json:"market_id"`
+	Question             string   `json:"question"`
+	OutcomeLabel         string   `json:"outcome_label"`
+	CanonicalProposition string   `json:"canonical_proposition"`
+	Team                 string   `json:"team,omitempty"`
+	StageKey             string   `json:"stage_key,omitempty"`
+	CurrentPrice         *float64 `json:"current_price,omitempty"`
+	CurrentPriceDevig    *float64 `json:"current_price_devig,omitempty"`
+}
+
+type ConditionalRow struct {
+	ANodeID    string   `json:"a_node_id"`
+	BNodeID    string   `json:"b_node_id"`
+	PAGivenB   *float64 `json:"p_a_given_b,omitempty"`
+	LowerBound *float64 `json:"lower_bound,omitempty"`
+	UpperBound *float64 `json:"upper_bound,omitempty"`
+	Method     string   `json:"method"`
+	Confidence *float64 `json:"confidence,omitempty"`
+}
+
+type GraphMetadata struct {
+	Version        string         `json:"version,omitempty"`
+	BuiltAt        string         `json:"built_at,omitempty"`
+	SourceManifest string         `json:"source_manifest,omitempty"`
+	Counts         map[string]int `json:"counts,omitempty"`
 }
 
 type GraphSnapshot struct {
-	Version    string       `json:"version"`
-	UpdatedAt  time.Time    `json:"updated_at"`
-	Assets     []AssetState `json:"assets"`
-	Edges      []GraphEdge  `json:"edges"`
-	Violations []Violation  `json:"violations"`
+	Version      string           `json:"version"`
+	UpdatedAt    time.Time        `json:"updated_at"`
+	Assets       []AssetState     `json:"assets"`
+	Metadata     GraphMetadata    `json:"metadata"`
+	Nodes        []GraphNode      `json:"nodes"`
+	Edges        []GraphEdge      `json:"edges"`
+	Conditionals []ConditionalRow `json:"conditionals"`
+	Violations   []Violation      `json:"violations"`
+	Warnings     []string         `json:"warnings"`
 }
 
 type LiveEvent struct {
@@ -132,11 +176,14 @@ func (h *Hub) Snapshot() GraphSnapshot {
 	}
 	sort.Slice(assets, func(i, j int) bool { return assets[i].AssetID < assets[j].AssetID })
 	return GraphSnapshot{
-		Version:    apiVersion,
-		UpdatedAt:  time.Now().UTC(),
-		Assets:     assets,
-		Edges:      []GraphEdge{},
-		Violations: []Violation{},
+		Version:      apiVersion,
+		UpdatedAt:    time.Now().UTC(),
+		Assets:       assets,
+		Nodes:        []GraphNode{},
+		Edges:        []GraphEdge{},
+		Conditionals: []ConditionalRow{},
+		Violations:   []Violation{},
+		Warnings:     []string{},
 	}
 }
 

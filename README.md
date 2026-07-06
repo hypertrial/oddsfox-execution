@@ -7,9 +7,30 @@ Local real-time backend for OddsFox dashboards.
 ```bash
 go run . -assets "<polymarket_asset_id_1>,<polymarket_asset_id_2>"
 go run . -knockout-artifact ../oddsfox-graph/output/wc2026/knockout_artifacts.json
+go run . -artifact-dir /artifacts
 ```
 
 The server listens on `http://127.0.0.1:8787` by default.
+
+Artifact-dir mode reads:
+
+```text
+/artifacts/releases/<UTC_BUILD_ID>/...
+/artifacts/current/knockout_artifacts.json
+/artifacts/current/graph_snapshot.json
+```
+
+`/artifacts/current` should be an atomic symlink update performed by the
+artifact builder. The server polls it with `-artifact-reload-interval` (default
+`60s`). Missing graph JSON returns an empty graph with a warning instead of
+crashing.
+
+Relevant flags/env:
+
+- `-artifact-dir` / `ODDSFOX_ARTIFACT_DIR`
+- `-graph-artifact` / `ODDSFOX_GRAPH_ARTIFACT`
+- `-knockout-artifact` / `ODDSFOX_KNOCKOUT_ARTIFACT`
+- `-artifact-reload-interval` / `ODDSFOX_ARTIFACT_RELOAD_INTERVAL`
 
 ## API
 
@@ -24,4 +45,18 @@ The server listens on `http://127.0.0.1:8787` by default.
 
 `oddsfox-live` subscribes to Polymarket's public market WebSocket, keeps local
 token state, exposes JSON/SSE for `oddsfox-dash`, and writes replayable JSONL
-events under `replay/`.
+events under `replay/`. When graph artifacts are loaded,
+`/api/v0/graph/snapshot` returns hosted graph nodes, logic edges, conditionals,
+violations, metadata, and live token state in one payload.
+
+## Docker
+
+From the OddsFox workspace root:
+
+```bash
+docker compose build live
+docker compose up live
+```
+
+The compose example mounts the shared `oddsfox-artifacts` volume at
+`/artifacts`.

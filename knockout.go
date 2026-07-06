@@ -45,6 +45,8 @@ type TeamStageMarket struct {
 	StageRank           int      `json:"stage_rank"`
 	NodeID              string   `json:"node_id"`
 	AssetID             string   `json:"asset_id"`
+	ProgressionAssetID  string   `json:"progression_asset_id"`
+	OppositeAssetID     string   `json:"opposite_asset_id"`
 	YesAssetID          string   `json:"yes_asset_id"`
 	NoAssetID           string   `json:"no_asset_id"`
 	MarketID            string   `json:"market_id"`
@@ -381,20 +383,21 @@ func (s *KnockoutService) currentStageProbability(teamID, stage string) (*float6
 }
 
 func (s *KnockoutService) marketProbability(market TeamStageMarket, assets map[string]AssetState) (*float64, string, string) {
-	yesID := firstNonEmpty(market.YesAssetID, market.AssetID)
-	yes, ok := assets[yesID]
+	progressID := firstNonEmpty(market.ProgressionAssetID, market.AssetID, market.YesAssetID)
+	oppositeID := firstNonEmpty(market.OppositeAssetID, market.NoAssetID)
+	progress, ok := assets[progressID]
 	if ok {
-		if value, updatedAt, ok := liveDevigMidpoint(yes, assets[market.NoAssetID]); ok {
+		if value, updatedAt, ok := liveDevigMidpoint(progress, assets[oppositeID]); ok {
 			return &value, "live_devig_midpoint", updatedAt
 		}
-		if value, ok := midpoint(yes.BestBid, yes.BestAsk); ok {
-			return &value, "live_midpoint", yes.UpdatedAt.Format(time.RFC3339)
+		if value, ok := midpoint(progress.BestBid, progress.BestAsk); ok {
+			return &value, "live_midpoint", progress.UpdatedAt.Format(time.RFC3339)
 		}
-		if value, updatedAt, ok := liveDevigLastTrade(yes, assets[market.NoAssetID]); ok {
+		if value, updatedAt, ok := liveDevigLastTrade(progress, assets[oppositeID]); ok {
 			return &value, "live_devig_last_trade", updatedAt
 		}
-		if value, ok := parseProbability(yes.LastPrice); ok {
-			return &value, "last_trade_price", yes.UpdatedAt.Format(time.RFC3339)
+		if value, ok := parseProbability(progress.LastPrice); ok {
+			return &value, "last_trade_price", progress.UpdatedAt.Format(time.RFC3339)
 		}
 	}
 	if market.BaselineProbability != nil {

@@ -67,6 +67,41 @@ func TestKnockoutSnapshotUsesLiveMidpoint(t *testing.T) {
 	t.Fatal("missing alpha winner probability")
 }
 
+func TestKnockoutSnapshotUsesProgressionAssetForNoToken(t *testing.T) {
+	hub := NewHub(nil)
+	value := 0.1
+	artifact := KnockoutArtifact{
+		Competition: "wc2026",
+		Stages:      []KnockoutStage{{Key: "round_of_16", Rank: 1, Label: "Round of 16"}},
+		Teams:       []KnockoutTeam{{TeamID: "alpha", Name: "Alpha"}},
+		TeamStageMarkets: []TeamStageMarket{{
+			TeamID:              "alpha",
+			Team:                "Alpha",
+			StageKey:            "round_of_16",
+			AssetID:             "alpha-no",
+			ProgressionAssetID:  "alpha-no",
+			OppositeAssetID:     "alpha-yes",
+			YesAssetID:          "alpha-yes",
+			NoAssetID:           "alpha-no",
+			BaselineProbability: &value,
+		}},
+		AssetIDs: []string{"alpha-yes", "alpha-no"},
+	}
+	hub.AddSubscriptions(artifact.AssetIDs)
+	hub.HandleRaw([]byte(`{"event_type":"last_trade_price","asset_id":"alpha-no","price":"0.70"}`))
+	hub.HandleRaw([]byte(`{"event_type":"last_trade_price","asset_id":"alpha-yes","price":"0.30"}`))
+
+	snapshot := NewKnockoutService(artifact, hub, NewSportsState(), "").Snapshot()
+
+	if len(snapshot.TeamProbabilities) != 1 {
+		t.Fatalf("unexpected probabilities: %+v", snapshot.TeamProbabilities)
+	}
+	got := snapshot.TeamProbabilities[0]
+	if got.Probability == nil || *got.Probability != 0.7 || got.Source != "live_devig_last_trade" {
+		t.Fatalf("No-token progression not used: %+v", got)
+	}
+}
+
 func TestLoadKnockoutArtifact(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "knockout_artifacts.json")
 	data, err := json.Marshal(testKnockoutArtifact())

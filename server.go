@@ -10,9 +10,10 @@ import (
 )
 
 type APIServer struct {
-	hub      *Hub
-	client   *MarketClient
-	knockout *KnockoutService
+	hub       *Hub
+	client    *MarketClient
+	knockout  *KnockoutService
+	artifacts *ArtifactStore
 }
 
 func NewAPIServer(hub *Hub, client *MarketClient) *APIServer {
@@ -21,6 +22,11 @@ func NewAPIServer(hub *Hub, client *MarketClient) *APIServer {
 
 func (s *APIServer) WithKnockout(knockout *KnockoutService) *APIServer {
 	s.knockout = knockout
+	return s
+}
+
+func (s *APIServer) WithArtifactStore(artifacts *ArtifactStore) *APIServer {
+	s.artifacts = artifacts
 	return s
 }
 
@@ -63,23 +69,25 @@ func (s *APIServer) handleSubscriptions(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *APIServer) handleSnapshot(w http.ResponseWriter, r *http.Request) {
-	writeJSONResponse(w, s.hub.Snapshot())
+	writeJSONResponse(w, s.graphSnapshot())
 }
 
 func (s *APIServer) handleKnockoutSnapshot(w http.ResponseWriter, r *http.Request) {
-	if s.knockout == nil {
+	knockout := s.currentKnockout()
+	if knockout == nil {
 		http.Error(w, "knockout artifact not configured", http.StatusNotFound)
 		return
 	}
-	writeJSONResponse(w, s.knockout.Snapshot())
+	writeJSONResponse(w, knockout.Snapshot())
 }
 
 func (s *APIServer) handleKnockoutTimeseries(w http.ResponseWriter, r *http.Request) {
-	if s.knockout == nil {
+	knockout := s.currentKnockout()
+	if knockout == nil {
 		http.Error(w, "knockout artifact not configured", http.StatusNotFound)
 		return
 	}
-	writeJSONResponse(w, s.knockout.Timeseries(r.URL.Query()))
+	writeJSONResponse(w, knockout.Timeseries(r.URL.Query()))
 }
 
 func (s *APIServer) handleReplay(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +119,7 @@ func (s *APIServer) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 	ch, cancel := s.hub.SubscribeSSE()
 	defer cancel()
-	writeSSE(w, "snapshot", s.hub.Snapshot())
+	writeSSE(w, "snapshot", s.graphSnapshot())
 	flusher.Flush()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -121,8 +129,8 @@ func (s *APIServer) handleStream(w http.ResponseWriter, r *http.Request) {
 			return
 		case event := <-ch:
 			writeSSE(w, "event", event)
-			if s.knockout != nil && (event.Type == "sports_update" || event.AssetID != "") {
-				writeSSE(w, "knockout_snapshot", s.knockout.Snapshot())
+			if knockout := s.currentKnockout(); knockout != nil && (event.Type == "sports_update" || event.AssetID != "") {
+				writeSSE(w, "knockout_snapshot", knockout.Snapshot())
 			}
 			flusher.Flush()
 		case <-ticker.C:
@@ -130,6 +138,23 @@ func (s *APIServer) handleStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func (s *APIServer) graphSnapshot() GraphSnapshot {
+	snapshot := s.hub.Snapshot()
+	if s.artifacts != nil {
+		snapshot = s.artifacts.GraphSnapshot(snapshot)
+	}
+	return snapshot
+}
+
+func (s *APIServer) currentKnockout() *KnockoutService {
+	if s.artifacts != nil {
+		if knockout := s.artifacts.Knockout(); knockout != nil {
+			return knockout
+		}
+	}
+	return s.knockout
 }
 
 func writeJSONResponse(w http.ResponseWriter, value any) {

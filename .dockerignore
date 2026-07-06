@@ -1,0 +1,7 @@
+.git
+*.test
+*.out
+*.coverprofile
+coverage.*
+oddsfox-live
+replay/
