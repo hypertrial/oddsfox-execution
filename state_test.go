@@ -57,3 +57,18 @@ func TestBestPriceHandlesLeadingDotPrices(t *testing.T) {
 		t.Fatalf("unexpected best prices: %+v", asset)
 	}
 }
+
+func TestHubCancelSubscriptionDoesNotCloseSSEChannel(t *testing.T) {
+	hub := NewHub(nil)
+	ch, cancel := hub.SubscribeSSE()
+
+	cancel()
+
+	select {
+	case _, ok := <-ch:
+		if !ok {
+			t.Fatal("cancel closed SSE channel")
+		}
+	default:
+	}
+}

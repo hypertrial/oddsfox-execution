@@ -31,6 +31,7 @@ func (s *scriptedConn) Write(_ context.Context, _ websocket.MessageType, data []
 
 func (s *scriptedConn) Close(websocket.StatusCode, string) error { return nil }
 func (s *scriptedConn) CloseNow() error                          { return nil }
+func (s *scriptedConn) SetReadLimit(int64)                       {}
 
 func TestSportsStateParsesResult(t *testing.T) {
 	state := NewSportsState()

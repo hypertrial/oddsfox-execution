@@ -11,8 +11,9 @@ import (
 )
 
 type fakeConn struct {
-	writes chan []byte
-	errs   chan error
+	writes    chan []byte
+	errs      chan error
+	readLimit int64
 }
 
 func newFakeConn() *fakeConn {
@@ -29,6 +30,7 @@ func (f *fakeConn) Write(_ context.Context, _ websocket.MessageType, data []byte
 	return nil
 }
 
+func (f *fakeConn) SetReadLimit(n int64)                     { f.readLimit = n }
 func (f *fakeConn) Close(websocket.StatusCode, string) error { return nil }
 func (f *fakeConn) CloseNow() error                          { return nil }
 
@@ -49,6 +51,9 @@ func TestMarketClientSubscribesAndReconnects(t *testing.T) {
 
 	go client.Run(ctx)
 	assertWriteContains(t, first.writes, `"type":"market"`)
+	if first.readLimit != marketReadLimit {
+		t.Fatalf("read limit = %d, want %d", first.readLimit, marketReadLimit)
+	}
 	first.errs <- errors.New("drop")
 	assertWriteContains(t, second.writes, `"type":"market"`)
 }

@@ -13,9 +13,12 @@ import (
 type wsConn interface {
 	Read(context.Context) (websocket.MessageType, []byte, error)
 	Write(context.Context, websocket.MessageType, []byte) error
+	SetReadLimit(int64)
 	Close(websocket.StatusCode, string) error
 	CloseNow() error
 }
+
+const marketReadLimit = 8 << 20
 
 type wsDial func(context.Context, string) (wsConn, error)
 
@@ -99,6 +102,7 @@ func (c *MarketClient) runOnce(ctx context.Context, assetIDs []string) error {
 	if err != nil {
 		return err
 	}
+	conn.SetReadLimit(marketReadLimit)
 	c.connMu.Lock()
 	c.conn = conn
 	c.connMu.Unlock()

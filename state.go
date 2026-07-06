@@ -215,7 +215,6 @@ func (h *Hub) SubscribeSSE() (<-chan LiveEvent, func()) {
 	return ch, func() {
 		h.mu.Lock()
 		delete(h.sinks, ch)
-		close(ch)
 		h.mu.Unlock()
 	}
 }
