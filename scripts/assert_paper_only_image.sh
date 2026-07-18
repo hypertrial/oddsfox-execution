@@ -38,7 +38,7 @@ if (( status == 0 )); then
   echo "paper-only image unexpectedly accepted live mode" >&2
   exit 1
 fi
-if ! rg --quiet 'live mode requires a binary built with the live feature' <<<"$output"; then
+if [[ "$output" != *"live mode requires a binary built with the live feature"* ]]; then
   echo "paper-only image failed for an unexpected reason:" >&2
   echo "$output" >&2
   exit 1
