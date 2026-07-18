@@ -7,4 +7,5 @@ config/risk-policy.json
 .env
 *.sqlite3
 *.lock
+!Cargo.lock
 *.partial
