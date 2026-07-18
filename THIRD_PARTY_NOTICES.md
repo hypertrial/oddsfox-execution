@@ -12,10 +12,11 @@ Copyright (c) 2025-2026 Polymarket
 
 Its MIT license permits use, modification, distribution, sublicensing, and
 sale subject to preserving its copyright and permission notice. The complete
-license text is included in the SDK source package and is reproduced by the
-release third-party-license report.
+license text is included in the SDK source package. Official container images
+include this notice and the project's MIT license under
+`/usr/share/licenses/oddsfox-execution/`.
 
 Other Rust dependencies and their licenses are governed by `Cargo.lock` and
-the allow/deny policy in `deny.toml`. Release artifacts must include the
-generated dependency license inventory; this file is not a substitute for
-that generated inventory.
+the allow/deny policy in `deny.toml`. Release SBOMs identify the exact
+dependency versions and declared licenses; this file is not a substitute for
+those machine-readable inventories.

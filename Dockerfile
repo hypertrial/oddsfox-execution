@@ -21,9 +21,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 oddsfox \
     && useradd --system --uid 10001 --gid oddsfox --home /var/lib/oddsfox oddsfox \
-    && install -d -o oddsfox -g oddsfox /var/lib/oddsfox /var/lib/oddsfox/backups
+    && install -d -o oddsfox -g oddsfox /var/lib/oddsfox /var/lib/oddsfox/backups \
+    && install -d /usr/share/licenses/oddsfox-execution
 
 COPY --from=build /src/target/release/oddsfox-exec /usr/local/bin/oddsfox-exec
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/licenses/oddsfox-execution/
 
 USER 10001:10001
 WORKDIR /var/lib/oddsfox

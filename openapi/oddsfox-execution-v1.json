@@ -51,6 +51,30 @@
         ],
         "type": "object"
       },
+      "ClientContext": {
+        "additionalProperties": false,
+        "properties": {
+          "correlation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strategy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strategy_order_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "DecimalString": {
         "pattern": "^[0-9]+(?:\\.[0-9]{1,6})?$",
         "type": "string"
@@ -95,8 +119,7 @@
         "additionalProperties": false,
         "properties": {
           "client_context": {
-            "additionalProperties": false,
-            "type": "object"
+            "$ref": "#/components/schemas/ClientContext"
           },
           "condition_id": {
             "maxLength": 128,
@@ -320,6 +343,17 @@
     "/v1/backups/{backup_id}": {
       "get": {
         "operationId": "getBackup",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "backup_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response"
@@ -408,6 +442,17 @@
     "/v1/cancellations/{cancellation_id}": {
       "get": {
         "operationId": "getCancellation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cancellation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response"
@@ -725,6 +770,17 @@
     "/v1/intents/{intent_id}": {
       "get": {
         "operationId": "getIntent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response"
@@ -841,6 +897,17 @@
     "/v1/orders/{order_id}": {
       "get": {
         "operationId": "getOrder",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response"
@@ -952,6 +1019,17 @@
     "/v1/reconciliations/{reconciliation_id}": {
       "get": {
         "operationId": "getReconciliation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reconciliation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response"

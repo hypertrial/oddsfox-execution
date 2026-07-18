@@ -486,6 +486,8 @@ acceptance.
 - `GET /v1/reconciliations/{reconciliation_id}`
 
 List endpoints use opaque cursor pagination and stable creation-time ordering.
+The optional `limit` must be between 1 and 500; values outside that range are
+rejected rather than silently changed.
 
 ### 8.3 Cancel
 

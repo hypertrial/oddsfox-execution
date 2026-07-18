@@ -41,7 +41,8 @@ repository to public `hypertrial/oddsfox-execution`.
   argument can add `live` or `aws-kms`.
 - CI runs all-feature source tests but publishes only the hardcoded paper
   binary. It also executes the built image with a live request and live
-  acknowledgement to prove startup is rejected.
+  acknowledgement to prove startup is rejected, and verifies that the project
+  license and third-party notice are present in the image.
 - The initial risk policy admits only FAK and GTD.
 - Published `linux/amd64` and `linux/arm64` images include SBOM and provenance,
   receive a GitHub build attestation, and are signed keylessly with GitHub

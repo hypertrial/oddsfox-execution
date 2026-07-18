@@ -50,6 +50,7 @@ jobs:
       - name: Install pinned audit tools
         run: |
           GOBIN="$HOME/.local/bin" go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          cargo install --locked ripgrep --version 14.1.1
           cargo install --locked cargo-audit --version 0.22.2
           cargo install --locked cargo-deny --version 0.19.7
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"

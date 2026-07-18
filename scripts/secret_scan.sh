@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+command -v rg >/dev/null || {
+  echo "ripgrep is required for the secret scan" >&2
+  exit 1
+}
+
 patterns=(
   '^[[:space:]]*ODDSFOX_ENABLE_LIVE_TRADING=YES[[:space:]]*$'
   'PRIVATE_KEY=[^<[:space:]]+'

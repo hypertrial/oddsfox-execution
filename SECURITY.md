@@ -33,7 +33,8 @@ full-history and working-tree secret scanning, `cargo audit`, `cargo deny`,
 OpenAPI drift checks, container build, and paper smoke tests. Release images
 are multi-architecture, SBOM- and provenance-bearing, and keylessly signed.
 The Polymarket SDK is exactly pinned and upgrades require contract/conformance
-review.
+review. Images also carry the project license and third-party notice in
+`/usr/share/licenses/oddsfox-execution/`.
 
 The official image is structurally paper-only: the Dockerfile hardcodes the
 `paper` Cargo feature and CI proves that a live-mode command fails even when

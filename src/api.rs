@@ -264,6 +264,27 @@ pub fn openapi_document() -> Value {
             .and_then(|item| item.get_mut("get"))
             .expect("list operation exists")["parameters"] = pagination_parameters.clone();
     }
+    for (path, parameter) in [
+        ("/v1/intents/{intent_id}", "intent_id"),
+        ("/v1/orders/{order_id}", "order_id"),
+        ("/v1/cancellations/{cancellation_id}", "cancellation_id"),
+        (
+            "/v1/reconciliations/{reconciliation_id}",
+            "reconciliation_id",
+        ),
+        ("/v1/backups/{backup_id}", "backup_id"),
+    ] {
+        paths
+            .get_mut(path)
+            .and_then(Value::as_object_mut)
+            .and_then(|item| item.get_mut("get"))
+            .expect("resource operation exists")["parameters"] = serde_json::json!([{
+            "name": parameter,
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string", "format": "uuid"}
+        }]);
+    }
     serde_json::json!({
         "openapi": "3.1.0",
         "info": {
@@ -321,7 +342,16 @@ pub fn openapi_document() -> Value {
                         ]},
                         "expires_at": {"type": ["string", "null"], "format": "date-time"},
                         "post_only": {"type": "boolean", "default": false},
-                        "client_context": {"type": "object", "additionalProperties": false}
+                        "client_context": {"$ref": "#/components/schemas/ClientContext"}
+                    }
+                },
+                "ClientContext": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "strategy": {"type": ["string", "null"]},
+                        "strategy_order_id": {"type": ["string", "null"]},
+                        "correlation_id": {"type": ["string", "null"]}
                     }
                 },
                 "CancellationRequest": {
@@ -506,7 +536,7 @@ fn page<T>(
     requested_limit: u32,
     cursor_for: impl FnOnce(&T) -> ResourceCursor,
 ) -> Result<ListPage<T>, ApiError> {
-    let limit = usize::try_from(requested_limit.clamp(1, 500)).map_err(|_| {
+    let limit = usize::try_from(requested_limit).map_err(|_| {
         ApiError::new(
             StatusCode::BAD_REQUEST,
             "PAGINATION_LIMIT_INVALID",
@@ -525,22 +555,35 @@ fn page<T>(
     Ok(ListPage { items, next_cursor })
 }
 
+fn validate_limit(limit: u32) -> Result<u32, ApiError> {
+    if !(1..=500).contains(&limit) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "PAGINATION_LIMIT_INVALID",
+            "pagination limit must be between 1 and 500",
+            false,
+        ));
+    }
+    Ok(limit)
+}
+
 async fn list_intents(
     State(state): State<ApiState>,
     Query(query): Query<IntentListQuery>,
 ) -> Result<Json<ListPage<IntentRecord>>, ApiError> {
+    let limit = validate_limit(query.limit)?;
     let cursor = decode_cursor(query.cursor.as_deref())?;
     let rows = state
         .store
         .list_intents_page(
-            query.limit,
+            limit,
             query.state,
             query.condition_id.as_deref(),
             query.created_after,
             cursor.map(|value| (value.created_at, value.id)),
         )
         .await?;
-    Ok(Json(page(rows, query.limit, |record| ResourceCursor {
+    Ok(Json(page(rows, limit, |record| ResourceCursor {
         created_at: record.created_at,
         id: record.id,
     })?))
@@ -557,18 +600,19 @@ async fn list_orders(
     State(state): State<ApiState>,
     Query(query): Query<OrderListQuery>,
 ) -> Result<Json<ListPage<OrderRecord>>, ApiError> {
+    let limit = validate_limit(query.limit)?;
     let cursor = decode_cursor(query.cursor.as_deref())?;
     let rows = state
         .store
         .list_orders_page(
-            query.limit,
+            limit,
             query.state,
             query.condition_id.as_deref(),
             query.token_id.as_deref(),
             cursor.map(|value| (value.created_at, value.id)),
         )
         .await?;
-    Ok(Json(page(rows, query.limit, |record| ResourceCursor {
+    Ok(Json(page(rows, limit, |record| ResourceCursor {
         created_at: record.created_at,
         id: record.id,
     })?))
@@ -585,18 +629,19 @@ async fn list_trades(
     State(state): State<ApiState>,
     Query(query): Query<TradeListQuery>,
 ) -> Result<Json<ListPage<TradeRecord>>, ApiError> {
+    let limit = validate_limit(query.limit)?;
     let cursor = decode_cursor(query.cursor.as_deref())?;
     let rows = state
         .store
         .list_trades_page(
-            query.limit,
+            limit,
             query.status,
             query.condition_id.as_deref(),
             query.token_id.as_deref(),
             cursor.map(|value| (value.created_at, value.id)),
         )
         .await?;
-    Ok(Json(page(rows, query.limit, |record| ResourceCursor {
+    Ok(Json(page(rows, limit, |record| ResourceCursor {
         created_at: record.created_at,
         id: record.id,
     })?))
@@ -1275,6 +1320,32 @@ mod tests {
         assert_eq!(decoded.created_at, expected.created_at);
         assert_eq!(decoded.id, expected.id);
         assert!(decode_cursor(Some("not valid base64!")).is_err());
+    }
+
+    #[test]
+    fn pagination_limit_rejects_values_outside_the_public_contract() {
+        assert_eq!(validate_limit(1).unwrap(), 1);
+        assert_eq!(validate_limit(500).unwrap(), 500);
+        assert!(validate_limit(0).is_err());
+        assert!(validate_limit(501).is_err());
+    }
+
+    #[test]
+    fn openapi_describes_resource_paths_and_client_context() {
+        let document = openapi_document();
+        let intent_id = &document["paths"]["/v1/intents/{intent_id}"]["get"]["parameters"][0];
+        assert_eq!(intent_id["name"], "intent_id");
+        assert_eq!(intent_id["in"], "path");
+        assert_eq!(intent_id["required"], true);
+
+        let context = &document["components"]["schemas"]["ClientContext"];
+        assert_eq!(context["additionalProperties"], false);
+        assert_eq!(context["properties"]["strategy"]["type"][0], "string");
+        assert_eq!(
+            document["components"]["schemas"]["OrderIntentRequest"]["properties"]["client_context"]
+                ["$ref"],
+            "#/components/schemas/ClientContext"
+        );
     }
 
     #[test]

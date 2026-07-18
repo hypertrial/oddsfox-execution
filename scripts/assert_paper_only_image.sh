@@ -13,6 +13,16 @@ if [[ "$mode_label" != "paper-only" ]]; then
   exit 1
 fi
 
+for license_file in LICENSE THIRD_PARTY_NOTICES.md; do
+  if ! docker run --rm \
+    --entrypoint /usr/bin/test \
+    "$image" \
+    -r "/usr/share/licenses/oddsfox-execution/$license_file"; then
+    echo "image is missing readable $license_file licensing material" >&2
+    exit 1
+  fi
+done
+
 live_enable="Y"
 live_enable="${live_enable}ES"
 set +e
