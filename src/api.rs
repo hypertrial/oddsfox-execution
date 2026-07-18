@@ -1250,7 +1250,9 @@ mod tests {
 
     #[test]
     fn token_bucket_honors_burst() {
-        let mut bucket = TokenBucket::new(25.0, 100.0);
+        // Disable refill so scheduler latency cannot replenish a token while
+        // the test consumes the initial burst.
+        let mut bucket = TokenBucket::new(0.0, 100.0);
         assert!((0..100).all(|_| bucket.take()));
         assert!(!bucket.take());
     }

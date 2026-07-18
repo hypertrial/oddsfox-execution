@@ -3,7 +3,7 @@
   "allowed_condition_ids": [],
   "allowed_token_ids": [],
   "allowed_sides": ["BUY", "SELL"],
-  "allowed_time_in_force": ["GTC", "GTD", "FOK", "FAK"],
+  "allowed_time_in_force": ["GTD", "FAK"],
   "max_quote_per_order": "100",
   "max_shares_per_order": "250",
   "max_open_orders": 100,

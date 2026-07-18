@@ -22,6 +22,10 @@ wallets, or expose the retired OddsFox dashboard API.
   `mode = "live"`, and `ODDSFOX_ENABLE_LIVE_TRADING=YES`.
 - The HTTP listener defaults to loopback, CORS is not enabled, and Prometheus
   metrics use a separate listener.
+- The official container is compiled with the `paper` feature only. Its
+  Dockerfile has no build argument capable of selecting `live` or `aws-kms`,
+  and CI proves that `--mode live` is rejected even when the live environment
+  acknowledgement is set.
 
 No live order or real-capital action is authorized merely by building or
 running this repository.
@@ -36,13 +40,16 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
 ```
 
-Build variants:
+Build the supported paper binary:
 
 ```bash
 cargo build --locked --release
-cargo build --locked --release --no-default-features --features live
-cargo build --locked --release --no-default-features --features aws-kms
 ```
+
+The source retains separately gated `live` and `aws-kms` features for future
+security review and conformance testing. They are unsupported for deployment
+in this release and are never selected by the official Dockerfile or release
+workflow.
 
 ## Configure and run paper mode
 
@@ -85,11 +92,11 @@ See:
 
 ## Live mode
 
-Live mode supports a Polymarket `POLY_1271` deposit wallet with either an
-owner-readable local secp256k1 key file or AWS KMS. CLOB credentials are
-derived in memory and are not persisted. Wallet creation, funding, deposits,
-bridging, approvals, allowance transactions, relayer batches, and builder fees
-are outside this service.
+Live deployment is intentionally unavailable in the first release. The
+official image cannot load a signer or enter live mode, regardless of runtime
+environment variables. The source-level implementation remains behind Cargo
+features for future review; it is not an authorized or supported deployment
+artifact.
 
 Before any funded deployment, complete the paper soak, restore rehearsal,
 read-only venue conformance, independent security review, and explicitly

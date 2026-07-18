@@ -15,17 +15,18 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
+  IMAGE: ghcr.io/hypertrial/oddsfox-execution
 
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
       - run: rustup toolchain install 1.93.1 --profile minimal --component rustfmt,clippy
       - run: rustup default 1.93.1
-      - uses: actions/cache@v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cargo/registry
@@ -36,39 +37,47 @@ jobs:
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
       - run: cargo run --locked -- openapi --check openapi/oddsfox-execution-v1.json
-      - run: bash scripts/secret_scan.sh
 
   supply-chain:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
       - run: rustup toolchain install 1.93.1 --profile minimal
       - run: rustup default 1.93.1
-      - run: cargo install --locked cargo-audit --version 0.22.2
-      - run: cargo install --locked cargo-deny --version 0.19.7
-      - run: bash scripts/cargo_audit.sh
-      - run: cargo deny --locked check
+      - name: Install pinned audit tools
+        run: |
+          GOBIN="$HOME/.local/bin" go install github.com/gitleaks/gitleaks/v8@v8.30.1
+          cargo install --locked cargo-audit --version 0.22.2
+          cargo install --locked cargo-deny --version 0.19.7
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: bash scripts/full_history_audit.sh
 
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           load: true
           tags: oddsfox-execution:ci
-          build-args: CARGO_FEATURES=paper
+          build-args: VCS_REF=${{ github.sha }}
           provenance: false
           sbom: false
+      - run: bash scripts/assert_paper_only_image.sh oddsfox-execution:ci
       - name: Paper-mode smoke test
         run: |
           docker run --rm -d --name oddsfox-execution-ci \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /var/lib/oddsfox:rw,noexec,nosuid,size=64m,uid=10001,gid=10001 \
             -p 8787:8787 \
             -v "$PWD/config/container-paper.toml:/etc/oddsfox/oddsfox.toml:ro" \
             -v "$PWD/config/risk-policy.example.json:/etc/oddsfox/risk-policy.json:ro" \
@@ -81,3 +90,46 @@ jobs:
             sleep 1
           done
           exit 1
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [rust, supply-chain, container]
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:main
+          build-args: VCS_REF=${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+      - uses: sigstore/cosign-installer@78e6cbd37d0ac1a40113c04f2037dacf1ea3f12e # v4
+      - name: Sign image by digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

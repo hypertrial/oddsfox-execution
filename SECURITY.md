@@ -29,9 +29,15 @@ not enabled. Never expose the metrics listener publicly.
 ## Supply chain
 
 `Cargo.lock` is committed. CI runs formatting, all-feature lint/test,
-`cargo audit`, `cargo deny`, secret scanning, OpenAPI drift checks, container
-build, and paper smoke tests. The Polymarket SDK is exactly pinned and upgrades
-require contract/conformance review.
+full-history and working-tree secret scanning, `cargo audit`, `cargo deny`,
+OpenAPI drift checks, container build, and paper smoke tests. Release images
+are multi-architecture, SBOM- and provenance-bearing, and keylessly signed.
+The Polymarket SDK is exactly pinned and upgrades require contract/conformance
+review.
+
+The official image is structurally paper-only: the Dockerfile hardcodes the
+`paper` Cargo feature and CI proves that a live-mode command fails even when
+the runtime acknowledgement variable is present.
 
 ## Supported security posture
 

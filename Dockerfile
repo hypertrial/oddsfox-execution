@@ -1,13 +1,20 @@
 FROM rust:1.93.1-bookworm AS build
 
-ARG CARGO_FEATURES=paper
 WORKDIR /src
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY migrations ./migrations
 COPY src ./src
-RUN cargo build --locked --release --no-default-features --features "${CARGO_FEATURES}"
+RUN cargo build --locked --release --no-default-features --features paper
 
 FROM debian:bookworm-slim
+
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.title="OddsFox Execution" \
+      org.opencontainers.image.description="Paper-only risk-controlled Polymarket intent executor" \
+      org.opencontainers.image.source="https://github.com/hypertrial/oddsfox-execution" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.licenses="MIT" \
+      io.oddsfox.execution-mode="paper-only"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \

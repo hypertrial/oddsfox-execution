@@ -24,13 +24,14 @@ The service is execution infrastructure only. Strategies, forecasts, market
 discovery, historical data, feature generation, optimization, and research
 remain in other repositories.
 
-This product replaces the current `oddsfox-live` read-only dashboard backend.
+This product replaces the predecessor `oddsfox-live` read-only dashboard
+backend.
 The existing dashboard, graph-artifact, sports, and replay APIs are retired
 rather than carried into the new service.
 
 ## 2. Context
 
-The current repository:
+The predecessor repository:
 
 - consumes public Polymarket market data;
 - merges that data with OddsFox graph and World Cup artifacts;

@@ -1,0 +1,14 @@
+title = "OddsFox Execution secret-scanning policy"
+
+[[allowlists]]
+description = "Generated, ignored, or Git-internal paths"
+paths = [
+  '''(^|/)\.git(/|$)''',
+  '''(^|/)data(/|$)''',
+  '''(^|/)target(/|$)''',
+]
+
+[[allowlists]]
+description = "Documented non-secret idempotency key used by a cancellation test"
+regexTarget = "match"
+regexes = ['''cancel-operation-0001''']
