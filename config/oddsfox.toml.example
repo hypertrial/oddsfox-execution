@@ -1,0 +1,38 @@
+mode = "paper"
+
+[server]
+bind = "127.0.0.1:8787"
+metrics_bind = "127.0.0.1:9090"
+max_body_bytes = 65536
+request_timeout_ms = 45000
+allow_non_loopback = false
+
+[storage]
+database_path = "./data/oddsfox-paper.sqlite3"
+backup_dir = "./data/backups"
+event_retention = 1000000
+
+[paper]
+starting_quote_balance = "10000"
+starting_positions = []
+
+[polymarket]
+clob_url = "https://clob.polymarket.com"
+websocket_url = "wss://ws-subscriptions-clob.polymarket.com"
+data_api_url = "https://data-api.polymarket.com"
+geoblock_url = "https://polymarket.com/api/geoblock"
+expected_protocol = 2
+chain_id = 137
+reconciliation_interval_seconds = 60
+geoblock_interval_seconds = 300
+heartbeat_interval_seconds = 5
+
+[[auth]]
+actor_id = "example-strategy"
+token_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+scopes = ["read", "submit", "cancel"]
+
+[[auth]]
+actor_id = "example-operator"
+token_sha256 = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+scopes = ["read", "cancel", "operate"]

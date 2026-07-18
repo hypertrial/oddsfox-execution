@@ -1,7 +1,10 @@
 .git
-*.test
-*.out
-*.coverprofile
-coverage.*
-oddsfox-live
-replay/
+.github
+target
+data
+config/oddsfox.toml
+config/risk-policy.json
+.env
+*.sqlite3
+*.lock
+*.partial

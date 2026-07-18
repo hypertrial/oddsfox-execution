@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.93.1 --profile minimal --component rustfmt,clippy
+      - run: rustup default 1.93.1
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --all-features
+      - run: cargo run --locked -- openapi --check openapi/oddsfox-execution-v1.json
+      - run: bash scripts/secret_scan.sh
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.93.1 --profile minimal
+      - run: rustup default 1.93.1
+      - run: cargo install --locked cargo-audit --version 0.22.2
+      - run: cargo install --locked cargo-deny --version 0.19.7
+      - run: bash scripts/cargo_audit.sh
+      - run: cargo deny --locked check
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: oddsfox-execution:ci
+          build-args: CARGO_FEATURES=paper
+          provenance: mode=max
+          sbom: true
+      - name: Paper-mode smoke test
+        run: |
+          docker run --rm -d --name oddsfox-execution-ci \
+            -p 8787:8787 \
+            -v "$PWD/config/container-paper.toml:/etc/oddsfox/oddsfox.toml:ro" \
+            -v "$PWD/config/risk-policy.example.json:/etc/oddsfox/risk-policy.json:ro" \
+            oddsfox-execution:ci
+          trap 'docker logs oddsfox-execution-ci; docker stop oddsfox-execution-ci' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8787/health/ready; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1

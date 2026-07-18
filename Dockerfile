@@ -1,19 +1,25 @@
-FROM golang:1.23-bookworm AS build
+FROM rust:1.93.1-bookworm AS build
 
+ARG CARGO_FEATURES=paper
 WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/oddsfox-live .
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY migrations ./migrations
+COPY src ./src
+RUN cargo build --locked --release --no-default-features --features "${CARGO_FEATURES}"
 
 FROM debian:bookworm-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 oddsfox \
+    && useradd --system --uid 10001 --gid oddsfox --home /var/lib/oddsfox oddsfox \
+    && install -d -o oddsfox -g oddsfox /var/lib/oddsfox /var/lib/oddsfox/backups
 
-COPY --from=build /out/oddsfox-live /usr/local/bin/oddsfox-live
+COPY --from=build /src/target/release/oddsfox-exec /usr/local/bin/oddsfox-exec
 
-EXPOSE 8787
-ENTRYPOINT ["oddsfox-live"]
-CMD ["-addr", "0.0.0.0:8787", "-artifact-dir", "/artifacts"]
+USER 10001:10001
+WORKDIR /var/lib/oddsfox
+EXPOSE 8787 9090
+ENTRYPOINT ["oddsfox-exec"]
+CMD ["serve", "--config", "/etc/oddsfox/oddsfox.toml", "--risk-policy", "/etc/oddsfox/risk-policy.json"]

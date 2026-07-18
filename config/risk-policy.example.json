@@ -1,0 +1,21 @@
+{
+  "version": "paper-example-v1",
+  "allowed_condition_ids": [],
+  "allowed_token_ids": [],
+  "allowed_sides": ["BUY", "SELL"],
+  "allowed_time_in_force": ["GTC", "GTD", "FOK", "FAK"],
+  "max_quote_per_order": "100",
+  "max_shares_per_order": "250",
+  "max_open_orders": 100,
+  "max_open_notional_per_market": "500",
+  "max_net_position_per_token": "500",
+  "max_gross_exposure": "2000",
+  "max_daily_matched_notional": "5000",
+  "max_worst_price_distance": "0.10",
+  "min_visible_depth": "10",
+  "max_market_metadata_age_seconds": 15,
+  "max_order_book_age_seconds": 5,
+  "max_user_stream_age_seconds": 30,
+  "max_reconciliation_age_seconds": 90,
+  "cancel_on_halt": true
+}

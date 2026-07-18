@@ -1,0 +1,33 @@
+mode = "paper"
+
+[server]
+bind = "0.0.0.0:8787"
+metrics_bind = "0.0.0.0:9090"
+max_body_bytes = 65536
+request_timeout_ms = 45000
+allow_non_loopback = true
+
+[storage]
+database_path = "/var/lib/oddsfox/paper.sqlite3"
+backup_dir = "/var/lib/oddsfox/backups"
+event_retention = 1000000
+
+[paper]
+starting_quote_balance = "10000"
+starting_positions = []
+
+[polymarket]
+clob_url = "https://clob.polymarket.com"
+websocket_url = "wss://ws-subscriptions-clob.polymarket.com"
+data_api_url = "https://data-api.polymarket.com"
+geoblock_url = "https://polymarket.com/api/geoblock"
+expected_protocol = 2
+chain_id = 137
+reconciliation_interval_seconds = 60
+geoblock_interval_seconds = 300
+heartbeat_interval_seconds = 5
+
+[[auth]]
+actor_id = "container-smoke"
+token_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+scopes = ["read", "submit", "cancel", "operate"]

@@ -1,0 +1,19 @@
+{
+  "condition_id": "0xreplace-with-condition-id",
+  "token_id": "12345678901234567890",
+  "side": "BUY",
+  "time_in_force": "GTC",
+  "quantity": {
+    "unit": "shares",
+    "value": "5"
+  },
+  "limit_price": "0.45",
+  "worst_price": null,
+  "expires_at": null,
+  "post_only": true,
+  "client_context": {
+    "strategy": "example",
+    "strategy_order_id": "example-001",
+    "correlation_id": "paper-run-001"
+  }
+}
