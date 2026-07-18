@@ -64,8 +64,8 @@ jobs:
           load: true
           tags: oddsfox-execution:ci
           build-args: CARGO_FEATURES=paper
-          provenance: mode=max
-          sbom: true
+          provenance: false
+          sbom: false
       - name: Paper-mode smoke test
         run: |
           docker run --rm -d --name oddsfox-execution-ci \
