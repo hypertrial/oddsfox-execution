@@ -12,7 +12,7 @@ Copyright (c) 2025-2026 Polymarket
 
 Its MIT license permits use, modification, distribution, sublicensing, and
 sale subject to preserving its copyright and permission notice. The complete
-license text is included in the SDK source package. Official container images
+license text is included in the SDK source package. Both Docker build targets
 include this notice and the project's MIT license under
 `/usr/share/licenses/oddsfox-execution/`.
 
