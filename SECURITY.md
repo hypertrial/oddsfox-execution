@@ -10,8 +10,12 @@ revision.
 ## Secrets
 
 - Persist only SHA-256 hashes of high-entropy API bearer tokens.
-- Store local wallet keys in an owner-readable mounted file (`0600` or
-  stricter). Live configuration does not accept environment private keys.
+- Pass API clients a token-file path; token values are never accepted in
+  command arguments or environment variables.
+- Store a local wallet key in a regular, non-symlink mounted file with exactly
+  `0400` or `0600` permissions. The loader supports Unix permission semantics;
+  the supported deployment runs it only inside a Linux container. Live
+  configuration does not accept environment private keys.
 - CLOB API credentials and passphrases are derived in memory and must not be
   logged, returned, or stored.
 - Do not bake configuration, keys, database files, `.env`, or credentials into
@@ -30,15 +34,16 @@ not enabled. Never expose the metrics listener publicly.
 
 `Cargo.lock` is committed. CI runs formatting, all-feature lint/test,
 full-history and working-tree secret scanning, `cargo audit`, `cargo deny`,
-OpenAPI drift checks, container build, and paper smoke tests. Release images
-are multi-architecture, SBOM- and provenance-bearing, and keylessly signed.
-The Polymarket SDK is exactly pinned and upgrades require contract/conformance
-review. Images also carry the project license and third-party notice in
+OpenAPI drift checks, Windows paper/live-gate tests, both container builds, and
+paper smoke tests. CI does not publish container images. The Polymarket SDK is
+exactly pinned and upgrades require contract/conformance review. Images carry
+the project license and third-party notice in
 `/usr/share/licenses/oddsfox-execution/`.
 
-The official image is structurally paper-only: the Dockerfile hardcodes the
-`paper` Cargo feature and CI proves that a live-mode command fails even when
-the runtime acknowledgement variable is present.
+The Dockerfile's final/default `paper` target is structurally paper-only. The
+separate `live-local` target compiles the local-file signer. CI checks each
+target's declared capabilities and proves that a live-mode command fails in
+the paper image even when the runtime acknowledgement variable is present.
 
 ## Supported security posture
 

@@ -2,6 +2,8 @@
 /data/
 /config/oddsfox.toml
 /config/risk-policy.json
+/config/*.key
+/config/*.token
 /.env
 *.sqlite3
 *.sqlite3-*

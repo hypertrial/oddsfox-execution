@@ -1,7 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-image="${1:?usage: scripts/assert_paper_only_image.sh IMAGE}"
+image="${1:?usage: scripts/assert_paper_only_image.sh IMAGE [EXPECTED_REVISION]}"
+expected_revision="${2:-}"
+
+platform="$(
+  docker inspect \
+    --format '{{ .Os }}/{{ .Architecture }}' \
+    "$image"
+)"
+if [[ "$platform" != "linux/amd64" ]]; then
+  echo "paper image platform is $platform, expected linux/amd64" >&2
+  exit 1
+fi
+
+runtime_user="$(docker inspect --format '{{ .Config.User }}' "$image")"
+if [[ "$runtime_user" != "10001:10001" ]]; then
+  echo "paper image user is $runtime_user, expected 10001:10001" >&2
+  exit 1
+fi
 
 mode_label="$(
   docker inspect \
@@ -10,6 +27,25 @@ mode_label="$(
 )"
 if [[ "$mode_label" != "paper-only" ]]; then
   echo "image is missing the paper-only execution-mode label" >&2
+  exit 1
+fi
+
+if [[ -n "$expected_revision" ]]; then
+  revision="$(
+    docker inspect \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+      "$image"
+  )"
+  if [[ "$revision" != "$expected_revision" ]]; then
+    echo "paper image revision is $revision, expected $expected_revision" >&2
+    exit 1
+  fi
+fi
+
+expected_capabilities='{"schema_version":"oddsfox.capabilities.v1","modes":["paper"],"signer":null}'
+capabilities="$(docker run --rm "$image" capabilities)"
+if [[ "$capabilities" != "$expected_capabilities" ]]; then
+  echo "paper image reported unexpected capabilities: $capabilities" >&2
   exit 1
 fi
 

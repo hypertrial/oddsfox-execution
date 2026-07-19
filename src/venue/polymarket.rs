@@ -1,9 +1,10 @@
 #[cfg(feature = "live")]
 mod implementation {
+    #[cfg(unix)]
+    use std::fs;
     use std::{
         borrow::Cow,
         collections::{HashMap, HashSet},
-        fs,
         str::FromStr,
         sync::{
             Arc,
@@ -17,8 +18,6 @@ mod implementation {
         signers::{Signer as _, local::PrivateKeySigner},
         sol_types::SolStruct as _,
     };
-    #[cfg(feature = "aws-kms")]
-    use alloy_signer_aws::AwsSigner;
     use async_trait::async_trait;
     use chrono::{DateTime, Utc};
     use futures::StreamExt as _;
@@ -43,7 +42,8 @@ mod implementation {
         ws::config::Config as WsConfig,
     };
     use rust_decimal::Decimal;
-    use secrecy::{ExposeSecret as _, SecretString};
+    #[cfg(unix)]
+    use secrecy::{ExposeSecret as _, ExposeSecretMut as _, SecretBox};
     use serde_json::Value;
     use tokio::sync::{Mutex, RwLock};
     use uuid::Uuid;
@@ -89,7 +89,7 @@ mod implementation {
         config: PolymarketConfig,
         client: AuthClient,
         data_client: DataClient,
-        signer: LiveSigner,
+        signer: PrivateKeySigner,
         ws: AuthWsClient,
         market_subscriptions: Mutex<HashSet<String>>,
         books: Arc<RwLock<HashMap<String, OrderBook>>>,
@@ -99,22 +99,6 @@ mod implementation {
         stream_gap_generation: Arc<AtomicU64>,
         reconciled_stream_generation: AtomicU64,
         heartbeat_id: Mutex<Option<Uuid>>,
-    }
-
-    enum LiveSigner {
-        Local(PrivateKeySigner),
-        #[cfg(feature = "aws-kms")]
-        Aws(AwsSigner),
-    }
-
-    impl LiveSigner {
-        fn address(&self) -> Address {
-            match self {
-                Self::Local(signer) => signer.address(),
-                #[cfg(feature = "aws-kms")]
-                Self::Aws(signer) => signer.address(),
-            }
-        }
     }
 
     impl std::fmt::Debug for PolymarketVenue {
@@ -130,49 +114,7 @@ mod implementation {
     impl PolymarketVenue {
         #[allow(clippy::too_many_lines)]
         pub async fn new(config: PolymarketConfig) -> Result<Self, VenueError> {
-            let signer = if let Some(key_path) = &config.private_key_file {
-                ensure_private_key_file(key_path)?;
-                let private_key = SecretString::from(
-                    fs::read_to_string(key_path)
-                        .map_err(|error| VenueError::LiveNotConfigured(error.to_string()))?,
-                );
-                LiveSigner::Local(
-                    PrivateKeySigner::from_str(private_key.expose_secret().trim())
-                        .map_err(|error| VenueError::LiveNotConfigured(error.to_string()))?
-                        .with_chain_id(Some(config.chain_id)),
-                )
-            } else {
-                #[cfg(feature = "aws-kms")]
-                {
-                    let key_id = config.aws_kms_key_id.clone().ok_or_else(|| {
-                        VenueError::LiveNotConfigured("aws_kms_key_id is required".into())
-                    })?;
-                    let aws_config =
-                        aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-                    let kms = aws_sdk_kms::Client::new(&aws_config);
-                    LiveSigner::Aws(
-                        AwsSigner::new(kms, key_id, Some(config.chain_id))
-                            .await
-                            .map_err(|error| VenueError::LiveNotConfigured(error.to_string()))?,
-                    )
-                }
-                #[cfg(not(feature = "aws-kms"))]
-                {
-                    return Err(VenueError::LiveNotConfigured(
-                        "AWS KMS requires the aws-kms build feature".into(),
-                    ));
-                }
-            };
-            let configured_signer =
-                Address::from_str(config.signer_address.as_deref().ok_or_else(|| {
-                    VenueError::LiveNotConfigured("signer_address is required".into())
-                })?)
-                .map_err(|error| VenueError::LiveNotConfigured(error.to_string()))?;
-            if signer.address() != configured_signer {
-                return Err(VenueError::LiveNotConfigured(
-                    "configured signer_address does not match mounted key".into(),
-                ));
-            }
+            let signer = load_live_signer(&config)?;
             let funder = Address::from_str(config.funder_address.as_deref().ok_or_else(|| {
                 VenueError::LiveNotConfigured("funder_address is required".into())
             })?)
@@ -205,47 +147,22 @@ mod implementation {
                     geoblock.country, geoblock.region
                 )));
             }
-            let (client, ws) = match &signer {
-                LiveSigner::Local(signer) => {
-                    let credentials = unauthenticated
-                        .create_or_derive_api_key(signer, None)
-                        .await
-                        .map_err(classify_pre_submit_error)?;
-                    let ws = WsClient::new(&config.websocket_url, WsConfig::default())
-                        .map_err(classify_pre_submit_error)?
-                        .authenticate(credentials.clone(), signer.address())
-                        .map_err(classify_pre_submit_error)?;
-                    let client = unauthenticated
-                        .authentication_builder(signer)
-                        .credentials(credentials)
-                        .funder(funder)
-                        .signature_type(SignatureType::Poly1271)
-                        .authenticate()
-                        .await
-                        .map_err(classify_pre_submit_error)?;
-                    (client, ws)
-                }
-                #[cfg(feature = "aws-kms")]
-                LiveSigner::Aws(signer) => {
-                    let credentials = unauthenticated
-                        .create_or_derive_api_key(signer, None)
-                        .await
-                        .map_err(classify_pre_submit_error)?;
-                    let ws = WsClient::new(&config.websocket_url, WsConfig::default())
-                        .map_err(classify_pre_submit_error)?
-                        .authenticate(credentials.clone(), signer.address())
-                        .map_err(classify_pre_submit_error)?;
-                    let client = unauthenticated
-                        .authentication_builder(signer)
-                        .credentials(credentials)
-                        .funder(funder)
-                        .signature_type(SignatureType::Poly1271)
-                        .authenticate()
-                        .await
-                        .map_err(classify_pre_submit_error)?;
-                    (client, ws)
-                }
-            };
+            let credentials = unauthenticated
+                .create_or_derive_api_key(&signer, None)
+                .await
+                .map_err(classify_pre_submit_error)?;
+            let ws = WsClient::new(&config.websocket_url, WsConfig::default())
+                .map_err(classify_pre_submit_error)?
+                .authenticate(credentials.clone(), signer.address())
+                .map_err(classify_pre_submit_error)?;
+            let client = unauthenticated
+                .authentication_builder(&signer)
+                .credentials(credentials)
+                .funder(funder)
+                .signature_type(SignatureType::Poly1271)
+                .authenticate()
+                .await
+                .map_err(classify_pre_submit_error)?;
             let ban = client
                 .closed_only_mode()
                 .await
@@ -556,12 +473,10 @@ mod implementation {
                 }
             }
             .map_err(classify_pre_submit_error)?;
-            match &self.signer {
-                LiveSigner::Local(signer) => self.client.sign(signer, signable).await,
-                #[cfg(feature = "aws-kms")]
-                LiveSigner::Aws(signer) => self.client.sign(signer, signable).await,
-            }
-            .map_err(classify_pre_submit_error)
+            self.client
+                .sign(&self.signer, signable)
+                .await
+                .map_err(classify_pre_submit_error)
         }
 
         async fn ensure_balance_and_allowance(
@@ -1135,31 +1050,115 @@ mod implementation {
         }
     }
 
-    #[cfg(unix)]
-    fn ensure_private_key_file(path: &str) -> Result<(), VenueError> {
-        use std::os::unix::fs::PermissionsExt as _;
+    pub fn validate_live_signer(config: &PolymarketConfig) -> Result<(), VenueError> {
+        load_live_signer(config).map(drop)
+    }
 
-        let link_metadata = fs::symlink_metadata(path)
-            .map_err(|error| VenueError::LiveNotConfigured(error.to_string()))?;
+    #[cfg(unix)]
+    fn load_live_signer(config: &PolymarketConfig) -> Result<PrivateKeySigner, VenueError> {
+        use std::{
+            io::Read as _,
+            os::unix::fs::{MetadataExt as _, PermissionsExt as _},
+        };
+
+        if config.chain_id != 137 {
+            return Err(VenueError::LiveNotConfigured(
+                "local signing supports only Polygon chain 137".into(),
+            ));
+        }
+        let path = config
+            .private_key_file
+            .as_deref()
+            .ok_or_else(|| VenueError::LiveNotConfigured("private_key_file is required".into()))?;
+        let link_metadata = fs::symlink_metadata(path).map_err(|_| {
+            VenueError::LiveNotConfigured("live key file could not be inspected".into())
+        })?;
         if link_metadata.file_type().is_symlink() || !link_metadata.is_file() {
             return Err(VenueError::LiveNotConfigured(
                 "live key path must be a regular, non-symlink file".into(),
             ));
         }
-        let mode = link_metadata.permissions().mode();
-        if mode & 0o077 != 0 || mode & 0o400 == 0 {
+        let mut key_file = fs::File::open(path)
+            .map_err(|_| VenueError::LiveNotConfigured("live key file could not be read".into()))?;
+        let opened_metadata = key_file.metadata().map_err(|_| {
+            VenueError::LiveNotConfigured("live key file could not be inspected".into())
+        })?;
+        let current_path_metadata = fs::symlink_metadata(path).map_err(|_| {
+            VenueError::LiveNotConfigured("live key file changed while it was being opened".into())
+        })?;
+        if current_path_metadata.file_type().is_symlink()
+            || !current_path_metadata.is_file()
+            || current_path_metadata.dev() != link_metadata.dev()
+            || current_path_metadata.ino() != link_metadata.ino()
+            || !opened_metadata.is_file()
+            || opened_metadata.dev() != link_metadata.dev()
+            || opened_metadata.ino() != link_metadata.ino()
+        {
             return Err(VenueError::LiveNotConfigured(
-                "live key file must be owner-readable and inaccessible to group/other".into(),
+                "live key file changed while it was being opened".into(),
             ));
         }
-        Ok(())
+        if !private_key_mode_is_allowed(opened_metadata.permissions().mode()) {
+            return Err(VenueError::LiveNotConfigured(
+                "live key file mode must be 0400 or 0600".into(),
+            ));
+        }
+        let key_length = usize::try_from(opened_metadata.len())
+            .map_err(|_| VenueError::LiveNotConfigured("live key file is too large".into()))?;
+        let buffer_length = key_length
+            .checked_add(1)
+            .ok_or_else(|| VenueError::LiveNotConfigured("live key file is too large".into()))?;
+        let mut private_key = SecretBox::<Vec<u8>>::default();
+        private_key.expose_secret_mut().resize(buffer_length, 0);
+        key_file
+            .read_exact(&mut private_key.expose_secret_mut()[..key_length])
+            .map_err(|_| VenueError::LiveNotConfigured("live key file could not be read".into()))?;
+        if key_file
+            .read(&mut private_key.expose_secret_mut()[key_length..])
+            .map_err(|_| VenueError::LiveNotConfigured("live key file could not be read".into()))?
+            != 0
+        {
+            return Err(VenueError::LiveNotConfigured(
+                "live key file changed while it was being read".into(),
+            ));
+        }
+        let private_key =
+            std::str::from_utf8(&private_key.expose_secret()[..key_length]).map_err(|_| {
+                VenueError::LiveNotConfigured(
+                    "live key file does not contain a valid private key".into(),
+                )
+            })?;
+        let signer = PrivateKeySigner::from_str(private_key.trim())
+            .map_err(|_| {
+                VenueError::LiveNotConfigured(
+                    "live key file does not contain a valid private key".into(),
+                )
+            })?
+            .with_chain_id(Some(137));
+        let configured_signer =
+            Address::from_str(config.signer_address.as_deref().ok_or_else(|| {
+                VenueError::LiveNotConfigured("signer_address is required".into())
+            })?)
+            .map_err(|_| {
+                VenueError::LiveNotConfigured("configured signer_address is invalid".into())
+            })?;
+        if signer.address() != configured_signer {
+            return Err(VenueError::LiveNotConfigured(
+                "configured signer_address does not match mounted key".into(),
+            ));
+        }
+        Ok(signer)
+    }
+
+    #[cfg(unix)]
+    fn private_key_mode_is_allowed(mode: u32) -> bool {
+        matches!(mode & 0o7777, 0o400 | 0o600)
     }
 
     #[cfg(not(unix))]
-    fn ensure_private_key_file(_path: &str) -> Result<(), VenueError> {
+    fn load_live_signer(_config: &PolymarketConfig) -> Result<PrivateKeySigner, VenueError> {
         Err(VenueError::LiveNotConfigured(
-            "local live key files require Unix permission checks; use AWS KMS on this platform"
-                .into(),
+            "local live key files are supported only on Unix platforms".into(),
         ))
     }
 
@@ -1344,27 +1343,89 @@ mod implementation {
         }
     }
 
-    #[cfg(all(test, unix))]
+    #[cfg(test)]
     mod tests {
-        use std::{fs, os::unix::fs::PermissionsExt as _};
-
-        use tempfile::tempdir;
-
         use super::*;
 
+        #[cfg(unix)]
+        fn signer_config(key_path: &std::path::Path, private_key: &str) -> PolymarketConfig {
+            let signer = PrivateKeySigner::from_str(private_key).unwrap();
+            PolymarketConfig {
+                private_key_file: Some(key_path.to_string_lossy().into_owned()),
+                signer_address: Some(signer.address().to_string()),
+                ..PolymarketConfig::default()
+            }
+        }
+
+        #[cfg(unix)]
         #[test]
-        fn local_live_key_requires_owner_only_regular_file() {
+        fn local_live_key_accepts_only_0400_or_0600_regular_files() {
+            use std::{fs, os::unix::fs::PermissionsExt as _};
+
+            use tempfile::tempdir;
+
             let directory = tempdir().unwrap();
             let key = directory.path().join("key");
-            fs::write(&key, "not-a-real-private-key").unwrap();
-            fs::set_permissions(&key, fs::Permissions::from_mode(0o644)).unwrap();
-            assert!(ensure_private_key_file(key.to_str().unwrap()).is_err());
+            let test_key_hex = "11".repeat(32);
+            fs::write(&key, &test_key_hex).unwrap();
+            let config = signer_config(&key, &test_key_hex);
+
+            fs::set_permissions(&key, fs::Permissions::from_mode(0o400)).unwrap();
+            assert!(load_live_signer(&config).is_ok());
             fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
-            assert!(ensure_private_key_file(key.to_str().unwrap()).is_ok());
+            assert!(load_live_signer(&config).is_ok());
+            for mode in [0o000, 0o500, 0o644, 0o700] {
+                fs::set_permissions(&key, fs::Permissions::from_mode(mode)).unwrap();
+                assert!(load_live_signer(&config).is_err());
+            }
+            for mode in [0o1400, 0o2400, 0o4400] {
+                assert!(!private_key_mode_is_allowed(mode));
+            }
 
             let link = directory.path().join("key-link");
             std::os::unix::fs::symlink(&key, &link).unwrap();
-            assert!(ensure_private_key_file(link.to_str().unwrap()).is_err());
+            let link_config = signer_config(&link, &test_key_hex);
+            assert!(load_live_signer(&link_config).is_err());
+
+            let directory_config = signer_config(directory.path(), &test_key_hex);
+            assert!(load_live_signer(&directory_config).is_err());
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn local_live_key_errors_do_not_expose_key_material() {
+            use std::{fs, os::unix::fs::PermissionsExt as _};
+
+            use tempfile::tempdir;
+
+            let directory = tempdir().unwrap();
+            let key = directory.path().join("key");
+            let malformed = format!("invalid-sensitive-value-{}", "x".repeat(32));
+            fs::write(&key, &malformed).unwrap();
+            fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
+            let mut config = PolymarketConfig {
+                private_key_file: Some(key.to_string_lossy().into_owned()),
+                signer_address: Some(format!("0x{}", "11".repeat(20))),
+                ..PolymarketConfig::default()
+            };
+            let error = load_live_signer(&config).unwrap_err().to_string();
+            assert!(!error.contains(&malformed));
+
+            let test_key_hex = "22".repeat(32);
+            fs::write(&key, &test_key_hex).unwrap();
+            config.signer_address = Some(format!("0x{}", "11".repeat(20)));
+            let mismatch = load_live_signer(&config).unwrap_err().to_string();
+            assert!(mismatch.contains("does not match"));
+            assert!(!mismatch.contains(&test_key_hex));
+        }
+
+        #[cfg(not(unix))]
+        #[test]
+        fn native_windows_live_signing_is_rejected() {
+            let error = load_live_signer(&PolymarketConfig::default())
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("supported only on Unix platforms"));
         }
 
         #[test]
@@ -1410,6 +1471,10 @@ mod implementation {
 
     #[derive(Debug)]
     pub struct PolymarketVenue;
+
+    pub fn validate_live_signer(_config: &PolymarketConfig) -> Result<(), VenueError> {
+        Err(VenueError::LiveNotCompiled)
+    }
 
     impl PolymarketVenue {
         #[allow(clippy::unused_async)]
@@ -1473,4 +1538,4 @@ mod implementation {
     }
 }
 
-pub use implementation::PolymarketVenue;
+pub use implementation::{PolymarketVenue, validate_live_signer};

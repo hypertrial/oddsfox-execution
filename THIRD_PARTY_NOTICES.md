@@ -17,6 +17,6 @@ include this notice and the project's MIT license under
 `/usr/share/licenses/oddsfox-execution/`.
 
 Other Rust dependencies and their licenses are governed by `Cargo.lock` and
-the allow/deny policy in `deny.toml`. Release SBOMs identify the exact
-dependency versions and declared licenses; this file is not a substitute for
-those machine-readable inventories.
+the allow/deny policy in `deny.toml`. `cargo deny` validates the exact locked
+dependency versions and declared licenses in CI; this file is not a substitute
+for that machine-readable dependency inventory.

@@ -102,7 +102,6 @@ pub struct PolymarketConfig {
     pub signer_address: Option<String>,
     pub funder_address: Option<String>,
     pub private_key_file: Option<String>,
-    pub aws_kms_key_id: Option<String>,
     #[serde(default = "default_reconcile_seconds")]
     pub reconciliation_interval_seconds: u64,
     #[serde(default = "default_geoblock_seconds")]
@@ -123,7 +122,6 @@ impl Default for PolymarketConfig {
             signer_address: None,
             funder_address: None,
             private_key_file: None,
-            aws_kms_key_id: None,
             reconciliation_interval_seconds: default_reconcile_seconds(),
             geoblock_interval_seconds: default_geoblock_seconds(),
             heartbeat_interval_seconds: default_heartbeat_seconds(),
@@ -264,16 +262,8 @@ impl Config {
         {
             bail!("live venue endpoints require HTTPS/WSS");
         }
-        match (
-            self.polymarket.private_key_file.is_some(),
-            self.polymarket.aws_kms_key_id.is_some(),
-        ) {
-            (false, false) => bail!("live mode requires a mounted key file or AWS KMS key"),
-            (true, true) => bail!("configure exactly one live signer: mounted key file or AWS KMS"),
-            (false, true) if !cfg!(feature = "aws-kms") => {
-                bail!("AWS KMS requires a binary built with the aws-kms feature")
-            }
-            _ => {}
+        if self.polymarket.private_key_file.is_none() {
+            bail!("live mode requires polymarket.private_key_file");
         }
         if !self.server.bind.ip().is_loopback() && !self.server.allow_non_loopback {
             bail!("live non-loopback HTTP bind requires server.allow_non_loopback=true");

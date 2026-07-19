@@ -1,6 +1,6 @@
 [package]
 name = "oddsfox-execution"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT"
@@ -12,18 +12,13 @@ name = "oddsfox-exec"
 path = "src/main.rs"
 
 [features]
-default = ["paper"]
-paper = []
+default = []
 live = ["dep:alloy"]
-aws-kms = ["live", "dep:alloy-signer-aws", "dep:aws-config", "dep:aws-sdk-kms"]
 
 [dependencies]
 alloy = { version = "1.6.3", default-features = false, features = ["signer-local"], optional = true }
-alloy-signer-aws = { version = "1.6.3", optional = true }
 anyhow = "1.0"
 async-trait = "0.1"
-aws-config = { version = "1.8", default-features = false, features = ["behavior-version-latest", "default-https-client", "rt-tokio"], optional = true }
-aws-sdk-kms = { version = "1.90", default-features = false, features = ["behavior-version-latest", "default-https-client", "rt-tokio"], optional = true }
 axum = { version = "0.8", features = ["macros", "json"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
@@ -55,7 +50,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2.5"
 utoipa = { version = "5.4", features = ["axum_extras", "chrono", "uuid", "decimal"] }
 uuid = { version = "1.23", features = ["serde", "v4", "v7"] }
-zeroize = "1.8"
 
 [dev-dependencies]
 http-body-util = "0.1"

@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::domain::{OrderIntentRequest, OrderState, TradeState};
 
 pub use paper::PaperVenue;
-pub use polymarket::PolymarketVenue;
+pub use polymarket::{PolymarketVenue, validate_live_signer};
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Serialize, Deserialize)]

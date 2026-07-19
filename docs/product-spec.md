@@ -1,11 +1,12 @@
 # oddsfox-execution Product Specification
 
-Status: Draft for implementation
+Status: Implemented through local paper deployment; live-local build/test only
 Product: `oddsfox-execution`
 Initial venue: Polymarket CLOB
 Implementation language: Rust
 License: MIT
-Last updated: 2026-07-18
+Current release: `0.3.0`
+Last updated: 2026-07-19
 
 ## 1. Executive summary
 
@@ -706,14 +707,14 @@ contract selection are derived from verified venue metadata, not caller input.
 
 ### 11.4 Signers
 
-The core depends on a narrow signer interface. Initial supported backends:
+The only signer backend is a local private key loaded from a mounted secret
+file inside Unix/Linux. The file must be regular, must not be a symlink, and
+must have exactly `0400` or `0600` permissions. The loader derives the Polygon
+chain-137 signer and verifies that it matches configuration before readiness.
 
-1. a local private key loaded from a mounted secret file; and
-2. an Alloy-compatible remote signer when enabled at build time.
-
-Environment-variable private keys may be supported for local development but
-must produce a live-mode warning. Secrets are redacted at type and logging
-boundaries.
+Environment-variable keys and remote signer backends are not supported.
+Secrets are held in redacted, zeroizing types and are redacted at error,
+logging, metrics, API, and persistence boundaries.
 
 ## 12. Configuration
 
@@ -722,7 +723,7 @@ Configuration is loaded once at startup from:
 1. command-line paths and mode selection;
 2. a non-secret TOML configuration file;
 3. a versioned JSON risk-policy file; and
-4. mounted secret files or the configured remote signer.
+4. a mounted local signer file for a live-local build.
 
 Unknown configuration fields are errors. Live mode refuses placeholder values,
 wildcard allowlists, missing authentication, writable-by-group secret files,
@@ -770,11 +771,18 @@ oddsfox-exec trades
 oddsfox-exec positions
 oddsfox-exec reconcile
 oddsfox-exec backup
+oddsfox-exec capabilities
 ```
 
 Mutating CLI commands call the running control API. They do not open the
 database directly. `doctor` performs non-trading configuration, connectivity,
 permission, protocol, clock, and credential checks.
+
+API client commands require `--token-file PATH` or
+`ODDSFOX_API_TOKEN_FILE=PATH`. Token values are not accepted through command
+arguments or environment variables. The file contains one UTF-8 token of at
+least 32 characters, permits one terminal LF or CRLF, and rejects embedded
+newlines or other surrounding whitespace.
 
 ## 14. Security, compliance, and licensing
 
@@ -928,8 +936,10 @@ cargo test --all-features
 cargo audit
 dependency license policy
 secret scan
-container build
+paper and live-local `linux/amd64` container builds
+container capability assertions
 container smoke test in paper mode
+native-Windows paper and live-signer rejection tests
 ```
 
 SDK upgrades additionally require recorded Polymarket contract tests and a
@@ -989,10 +999,11 @@ restart, reconcile, heartbeat cancellation, and kill-switch workflows.
 
 ### Phase 4: Production hardening
 
-- Add remote signer support if required.
 - Tune capacity and backpressure from observed workloads.
 - Complete recovery runbook, dashboards, alerts, dependency update policy, and
   external security review.
+- Keep the local-file signer unless an independently reviewed requirement
+  justifies a different custody boundary.
 
 ## 19. Repository migration
 
@@ -1019,7 +1030,8 @@ Retain or replace:
 Companion changes are required in `oddsfox-dash`, `oddsfox-graph`, and
 `oddsfox-pipeline` to remove references to `oddsfox-live`.
 
-The first preview release is `v0.2.0`. The first release authorized for
+The first preview release was `v0.2.0`. The signing/configuration simplification
+is `v0.3.0`. The first release authorized for
 meaningful live capital is `v1.0.0`.
 
 ## 20. Acceptance criteria for v1

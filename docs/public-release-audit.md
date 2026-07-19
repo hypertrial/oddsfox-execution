@@ -1,5 +1,11 @@
 # Public release audit
 
+> **Historical record:** This document records the 2026-07-18 public-release
+> gate and the controls that existed at that audit baseline. It is not current
+> deployment guidance. Release `0.3.0` replaced registry publishing and cloud
+> signing infrastructure with local, commit-pinned `linux/amd64` image builds;
+> the evidence below remains unchanged for auditability.
+
 Audit date: 2026-07-18
 
 This gate covers the transition from the private `hypertrial/oddsfox-live`

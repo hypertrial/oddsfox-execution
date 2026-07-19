@@ -100,8 +100,23 @@ while a critical finding remains unresolved.
 Live readiness additionally requires the compile-time `live` feature,
 configuration mode, explicit environment gate, signer/funder match, protocol
 V2, geographic eligibility, authenticated streams, heartbeat, and a clean
-startup reconciliation. Production V2 uses `https://clob.polymarket.com`; the
+startup reconciliation. The only signer backend is a local private-key file
+loaded inside Unix/Linux. The loader rejects symlinks, non-regular files, and
+permissions other than `0400` or `0600`, then verifies the derived signer
+against configuration. Production V2 uses `https://clob.polymarket.com`; the
 former `clob-v2.polymarket.com` pre-cutover host is not a production target.
+
+## Build boundary
+
+The Dockerfile has two explicit `linux/amd64` targets built from digest-pinned
+bases. Its final/default `paper` target omits the `live` feature. The separate
+`live-local` target includes the local signer for build and conformance tests;
+the OddsFox parent deploys only `paper`. Both run as UID/GID `10001` and expose
+their compile-time boundary through `oddsfox-exec capabilities`.
+
+CI builds and inspects both targets but publishes neither. Local deployments
+record the source revision and Docker image ID, so deployment does not depend
+on a registry, signing service, or cloud key-management service.
 
 ## Deliberate v1 limits
 
@@ -110,5 +125,6 @@ former `clob-v2.polymarket.com` pre-cutover host is not a production target.
 - Polymarket only; venue SDK types remain inside the adapter.
 - `POLY_1271` only; wallet provisioning and on-chain allowance changes are
   external.
+- One local-file signer; no environment key, remote signer, or signer service.
 - No builder fee and no geographic bypass behavior.
 - No automatic position-closing exception while halted.

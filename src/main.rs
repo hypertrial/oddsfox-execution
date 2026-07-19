@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use oddsfox_execution::{
@@ -18,9 +18,10 @@ use oddsfox_execution::{
     execution::ExecutionCoordinator,
     risk::RiskPolicy,
     store::{Store, verify_backup_offline},
-    venue::{ExecutionVenue, PaperVenue, PolymarketVenue},
+    venue::{ExecutionVenue, PaperVenue, PolymarketVenue, validate_live_signer},
 };
 use reqwest::{Client, Method};
+use secrecy::{ExposeSecret as _, ExposeSecretMut as _, SecretBox, SecretString};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -37,6 +38,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    Capabilities,
     Serve(ServeArgs),
     Doctor(DoctorArgs),
     Submit(RequestFileArgs),
@@ -113,16 +115,27 @@ struct ReasonArgs {
 struct ApiArgs {
     #[arg(long, default_value = "http://127.0.0.1:8787")]
     url: String,
-    #[arg(long, env = "ODDSFOX_API_TOKEN", hide_env_values = true)]
-    token: String,
+    #[arg(long, env = "ODDSFOX_API_TOKEN_FILE", hide_env_values = true)]
+    token_file: PathBuf,
     #[arg(long)]
     idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct Capabilities {
+    schema_version: &'static str,
+    modes: &'static [&'static str],
+    signer: Option<&'static str>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     init_tracing();
     match Cli::parse().command {
+        Command::Capabilities => {
+            println!("{}", serde_json::to_string(&capabilities())?);
+            Ok(())
+        }
         Command::Serve(args) => serve(args).await,
         Command::Doctor(args) => doctor(&args).await,
         Command::Submit(args) => {
@@ -282,12 +295,7 @@ async fn doctor(args: &DoctorArgs) -> Result<()> {
         database_parent.display()
     );
     if config.mode == Mode::Live {
-        let key_path = config.polymarket.private_key_file.as_deref().map(Path::new);
-        if let Some(key_path) = key_path {
-            let metadata = std::fs::metadata(key_path)
-                .with_context(|| format!("inspect key file {}", key_path.display()))?;
-            ensure_owner_only(&metadata)?;
-        }
+        validate_live_signer(&config.polymarket)?;
     }
     let venue_check = doctor_public_venue(&config).await?;
     println!(
@@ -382,21 +390,6 @@ fn validate_mode_policy(config: &Config, policy: &RiskPolicy) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
-fn ensure_owner_only(metadata: &std::fs::Metadata) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let mode = metadata.permissions().mode() & 0o077;
-    if mode != 0 {
-        bail!("live key file must not be readable or writable by group/other");
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn ensure_owner_only(_metadata: &std::fs::Metadata) -> Result<()> {
-    Ok(())
-}
-
 async fn control_request(api: &ApiArgs, path: &str, reason: &str) -> Result<()> {
     print_json(
         api_request(
@@ -419,10 +412,11 @@ async fn api_request<T: Serialize + ?Sized>(
     body: Option<&T>,
     idempotent: bool,
 ) -> Result<Value> {
+    let token = load_api_token(&api.token_file)?;
     let client = Client::builder().timeout(Duration::from_secs(45)).build()?;
     let mut request = client
         .request(method, format!("{}{}", api.url.trim_end_matches('/'), path))
-        .bearer_auth(&api.token);
+        .bearer_auth(token.expose_secret());
     if idempotent {
         request = request.header(
             "Idempotency-Key",
@@ -439,6 +433,64 @@ async fn api_request<T: Serialize + ?Sized>(
     let body: Value = response.json().await?;
     anyhow::ensure!(status.is_success(), "API returned {status}: {body}");
     Ok(body)
+}
+
+fn capabilities() -> Capabilities {
+    if cfg!(feature = "live") {
+        Capabilities {
+            schema_version: "oddsfox.capabilities.v1",
+            modes: &["paper", "live"],
+            signer: Some("local_file"),
+        }
+    } else {
+        Capabilities {
+            schema_version: "oddsfox.capabilities.v1",
+            modes: &["paper"],
+            signer: None,
+        }
+    }
+}
+
+fn load_api_token(path: &Path) -> Result<SecretString> {
+    let mut file = std::fs::File::open(path)
+        .with_context(|| format!("read bearer token file {}", path.display()))?;
+    let length =
+        usize::try_from(file.metadata()?.len()).context("bearer token file is too large")?;
+    let buffer_length = length
+        .checked_add(1)
+        .context("bearer token file is too large")?;
+    let mut bytes = SecretBox::<Vec<u8>>::default();
+    bytes.expose_secret_mut().resize(buffer_length, 0);
+    file.read_exact(&mut bytes.expose_secret_mut()[..length])
+        .context("read bearer token file")?;
+    anyhow::ensure!(
+        file.read(&mut bytes.expose_secret_mut()[length..])? == 0,
+        "bearer token file changed while it was being read"
+    );
+    let contents = std::str::from_utf8(&bytes.expose_secret()[..length])
+        .context("bearer token file must contain valid UTF-8")?;
+    parse_api_token(contents)
+}
+
+fn parse_api_token(mut contents: &str) -> Result<SecretString> {
+    if let Some(without_terminator) = contents.strip_suffix("\r\n") {
+        contents = without_terminator;
+    } else if let Some(without_terminator) = contents.strip_suffix('\n') {
+        contents = without_terminator;
+    }
+    anyhow::ensure!(
+        !contents.contains(['\r', '\n']),
+        "bearer token file must contain exactly one line"
+    );
+    anyhow::ensure!(
+        contents.trim() == contents,
+        "bearer token file must not contain surrounding whitespace"
+    );
+    anyhow::ensure!(
+        contents.chars().count() >= 32,
+        "bearer token file must contain at least 32 characters"
+    );
+    Ok(SecretString::from(contents))
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -472,5 +524,60 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     {
         let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use secrecy::ExposeSecret as _;
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn capabilities_contract_is_stable() {
+        let encoded = serde_json::to_string(&capabilities()).unwrap();
+        if cfg!(feature = "live") {
+            assert_eq!(
+                encoded,
+                r#"{"schema_version":"oddsfox.capabilities.v1","modes":["paper","live"],"signer":"local_file"}"#
+            );
+        } else {
+            assert_eq!(
+                encoded,
+                r#"{"schema_version":"oddsfox.capabilities.v1","modes":["paper"],"signer":null}"#
+            );
+        }
+    }
+
+    #[test]
+    fn token_file_accepts_no_terminator_lf_or_crlf() {
+        let token = "a".repeat(32);
+        for suffix in ["", "\n", "\r\n"] {
+            let candidate = format!("{token}{suffix}");
+            let parsed = parse_api_token(&candidate).unwrap();
+            assert_eq!(parsed.expose_secret(), &token);
+        }
+    }
+
+    #[test]
+    fn token_file_rejects_short_multiline_and_surrounding_whitespace() {
+        for invalid in [
+            "short".to_owned(),
+            format!("{}\n{}\n", "a".repeat(32), "b".repeat(32)),
+            format!(" {}", "a".repeat(32)),
+            format!("{} ", "a".repeat(32)),
+            format!("{}\n\n", "a".repeat(32)),
+            format!("{}\r", "a".repeat(32)),
+        ] {
+            assert!(parse_api_token(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn missing_token_file_is_rejected_without_exposing_a_token() {
+        let path = tempdir().unwrap().path().join("missing-token");
+        let error = load_api_token(&path).unwrap_err().to_string();
+        assert!(error.contains("read bearer token file"));
     }
 }

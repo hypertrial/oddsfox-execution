@@ -4,6 +4,10 @@
 prediction markets. It accepts explicit order intents from separate strategy
 systems and starts with Polymarket's V2 CLOB.
 
+The current release is `0.3.0`. It is designed for a small team operating a
+local Windows workstation through Linux containers, without a cloud signer or
+container-registry dependency.
+
 This repository is execution infrastructure only. It does not generate
 signals, discover markets, ingest research data, manage deposits, create
 wallets, or expose the retired OddsFox dashboard API.
@@ -20,12 +24,13 @@ wallets, or expose the retired OddsFox dashboard API.
   halt, retains worst-case exposure, and requires positive venue evidence.
 - Live mode requires all three gates: the `live` Cargo feature,
   `mode = "live"`, and `ODDSFOX_ENABLE_LIVE_TRADING=YES`.
+- Live builds accept one local private-key file inside a Linux container. The
+  file must be a regular, non-symlink file with mode `0400` or `0600`.
 - The HTTP listener defaults to loopback, CORS is not enabled, and Prometheus
   metrics use a separate listener.
-- The official container is compiled with the `paper` feature only. Its
-  Dockerfile has no build argument capable of selecting `live` or `aws-kms`,
-  and CI proves that `--mode live` is rejected even when the live environment
-  acknowledgement is set.
+- The Dockerfile's final/default `paper` target cannot sign or enter live
+  mode. A separate `live-local` target is compile- and test-ready but is not
+  deployed by the OddsFox parent.
 
 No live order or real-capital action is authorized merely by building or
 running this repository.
@@ -40,16 +45,29 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
 ```
 
-Build the supported paper binary:
+Build the default paper binary or the separately gated live-local binary:
 
 ```bash
 cargo build --locked --release
+cargo build --locked --release --features live
 ```
 
-The source retains separately gated `live` and `aws-kms` features for future
-security review and conformance testing. They are unsupported for deployment
-in this release and are never selected by the official Dockerfile or release
-workflow.
+Build the supported local paper image for an AMD64 Docker Desktop workstation:
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  --target paper \
+  --build-arg "VCS_REF=$(git rev-parse HEAD)" \
+  --load \
+  --tag "oddsfox-execution:$(git rev-parse HEAD)" \
+  .
+docker run --rm "oddsfox-execution:$(git rev-parse HEAD)" capabilities
+```
+
+The capability response must list only `paper`. CI also builds the
+`live-local` target to test that the local signer continues to compile, but it
+does not publish either image.
 
 ## Configure and run paper mode
 
@@ -68,7 +86,14 @@ printf '%s' "$ODDSFOX_NEW_TOKEN" | oddsfox-exec token-digest
 ```
 
 Replace the example `token_sha256`, keep the original token in the calling
-client's secret store, and send it as `Authorization: Bearer ...`.
+client's secret file, and point CLI clients to that file:
+
+```bash
+oddsfox-exec orders --token-file config/operator.token
+```
+
+`ODDSFOX_API_TOKEN_FILE` may supply the same path. Token values are never
+accepted in command arguments or environment variables.
 
 ## Interfaces
 
@@ -76,7 +101,8 @@ client's secret store, and send it as `Authorization: Bearer ...`.
 - Metrics: `http://127.0.0.1:9090/metrics`
 - Liveness/readiness: `/health/live`, `/health/ready`
 - Durable API and resumable SSE: `/v1/*`
-- Operator CLI: `oddsfox-exec submit|cancel|halt|resume|reconcile|backup|doctor`
+- Operator CLI:
+  `oddsfox-exec submit|cancel|halt|resume|reconcile|backup|doctor|capabilities`
 
 All mutations require a caller-controlled `Idempotency-Key`. CLI mutations
 accept `--idempotency-key`; when omitted, the CLI creates one for a single
@@ -93,10 +119,10 @@ See:
 ## Live mode
 
 Live deployment is intentionally unavailable in the first release. The
-official image cannot load a signer or enter live mode, regardless of runtime
-environment variables. The source-level implementation remains behind Cargo
-features for future review; it is not an authorized or supported deployment
-artifact.
+default paper image cannot load a signer or enter live mode, regardless of
+runtime environment variables. The `live-local` target uses one mounted local
+key file and exists only for build and conformance testing; this repository
+does not provide live provisioning or deployment configuration.
 
 Before any funded deployment, complete the paper soak, restore rehearsal,
 read-only venue conformance, independent security review, and explicitly
