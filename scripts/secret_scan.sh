@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-command -v rg >/dev/null || {
-  echo "ripgrep is required for the secret scan" >&2
-  exit 1
-}
-
 patterns=(
   '^[[:space:]]*ODDSFOX_ENABLE_LIVE_TRADING=YES[[:space:]]*$'
   'PRIVATE_KEY=[^<[:space:]]+'
@@ -16,10 +11,13 @@ patterns=(
 )
 
 for pattern in "${patterns[@]}"; do
-  if rg --hidden --glob '!.git/**' --glob '!scripts/secret_scan.sh' \
-    --glob '!docs/**' --glob '!README.md' --glob '!SECURITY.md' \
-    --glob '!COMPLIANCE.md' --glob '!openapi/**' \
-    --line-number --regexp "$pattern"; then
+  if git grep --line-number --extended-regexp -e "$pattern" -- . \
+    ':(exclude)scripts/secret_scan.sh' \
+    ':(exclude)docs/**' \
+    ':(exclude)README.md' \
+    ':(exclude)SECURITY.md' \
+    ':(exclude)COMPLIANCE.md' \
+    ':(exclude)openapi/**'; then
     echo "possible secret matched pattern: $pattern" >&2
     exit 1
   fi
