@@ -16,12 +16,6 @@ RUN cargo build --locked --release --features live
 
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS runtime-base
 
-ARG VCS_REF=unknown
-LABEL org.opencontainers.image.title="OddsFox Execution" \
-      org.opencontainers.image.source="https://github.com/hypertrial/oddsfox-execution" \
-      org.opencontainers.image.revision="${VCS_REF}" \
-      org.opencontainers.image.licenses="MIT"
-
 RUN test "$(dpkg --print-architecture)" = "amd64" \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
@@ -32,6 +26,12 @@ RUN test "$(dpkg --print-architecture)" = "amd64" \
     && install -d /usr/share/licenses/oddsfox-execution
 
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/licenses/oddsfox-execution/
+
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.title="OddsFox Execution" \
+      org.opencontainers.image.source="https://github.com/hypertrial/oddsfox-execution" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.licenses="MIT"
 
 USER 10001:10001
 WORKDIR /var/lib/oddsfox

@@ -39,11 +39,13 @@ running this repository.
 
 Rust `1.93.1` is pinned in `rust-toolchain.toml`.
 
-```bash
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-```
+Run `bash scripts/check.sh fast` before ordinary pushes. It checks formatting,
+clippy, all-feature tests, the OpenAPI contract, and tracked-file secrets;
+GitHub runs the same gate automatically. Run `bash scripts/check.sh full`
+before releases and after dependency, signing, Docker, or supply-chain changes.
+The full command adds public-history and dependency audits, both image targets,
+image assertions, and the paper-mode smoke. Native Windows coverage runs in the
+manual `Manual Full Validation` workflow.
 
 Build the default paper binary or the separately gated live-local binary:
 
