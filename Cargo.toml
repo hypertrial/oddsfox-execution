@@ -29,7 +29,6 @@ hex = "0.4"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
 polymarket_client_sdk_v2 = { version = "=0.7.0", default-features = false, features = ["clob", "data", "ws", "tracing"] }
-rand = "0.9"
 reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls"] }
 rust_decimal = { version = "1.41", features = ["serde-with-str"] }
 secrecy = "0.10"
@@ -47,15 +46,11 @@ tower = { version = "0.5", features = ["limit", "timeout", "util"] }
 tower-http = { version = "0.6", features = ["limit", "request-id", "trace", "util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-url = "2.5"
 utoipa = { version = "5.4", features = ["axum_extras", "chrono", "uuid", "decimal"] }
 uuid = { version = "1.23", features = ["serde", "v4", "v7"] }
 
 [dev-dependencies]
-http-body-util = "0.1"
-proptest = "1.9"
 tempfile = "3.23"
-tower = { version = "0.5", features = ["util"] }
 
 [profile.release]
 lto = "thin"

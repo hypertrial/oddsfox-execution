@@ -24,12 +24,10 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install 1.93.1 --profile minimal --component rustfmt,clippy
-      - run: rustup default 1.93.1
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cargo/registry
-            ~/.cargo/git
             target
           key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
       - run: cargo fmt --check
@@ -44,12 +42,10 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install 1.93.1 --profile minimal
-      - run: rustup default 1.93.1
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cargo/registry
-            ~/.cargo/git
             target
           key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
       - name: Test paper execution on Windows
@@ -65,7 +61,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: rustup toolchain install 1.93.1 --profile minimal
-      - run: rustup default 1.93.1
       - name: Install pinned audit tools
         run: |
           GOBIN="$HOME/.local/bin" go install github.com/zricethezav/gitleaks/v8@v8.30.1

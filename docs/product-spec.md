@@ -958,16 +958,6 @@ Live mode remains compile-time or configuration-gated until:
 
 ## 18. Rollout
 
-### Phase 0: Repository reset
-
-- Preserve the existing `v0.1.0` tag.
-- Rename the repository to `oddsfox-execution`.
-- Remove the Go dashboard backend and its API contract.
-- Update downstream OddsFox repositories so they no longer build or depend on
-  `oddsfox-live`.
-- Establish Rust workspace, CI, security policy, licensing notices, and
-  architecture records.
-
 ### Phase 1: Paper foundation
 
 - Implement domain types, SQLite journal, state machines, control API, auth,
@@ -1005,36 +995,7 @@ restart, reconcile, heartbeat cancellation, and kill-switch workflows.
 - Keep the local-file signer unless an independently reviewed requirement
   justifies a different custody boundary.
 
-## 19. Repository migration
-
-The overhaul is intentionally incompatible.
-
-Remove:
-
-- `main.go`, `server.go`, `state.go`, `stream.go`, and their Go tests;
-- graph and knockout artifact loading;
-- sports WebSocket integration;
-- dashboard SSE and replay JSONL;
-- `/api/v0/*`;
-- Go module files; and
-- the current Go Docker image.
-
-Retain or replace:
-
-- retain the MIT license;
-- replace the README with execution-product documentation;
-- replace the Dockerfile with a multi-stage Rust build and non-root runtime;
-- replace dashboard API docs with OpenAPI and operator docs; and
-- preserve historical behavior through Git tags, not compatibility code.
-
-Companion changes are required in `oddsfox-dash`, `oddsfox-graph`, and
-`oddsfox-pipeline` to remove references to `oddsfox-live`.
-
-The first preview release was `v0.2.0`. The signing/configuration simplification
-is `v0.3.0`. The first release authorized for
-meaningful live capital is `v1.0.0`.
-
-## 20. Acceptance criteria for v1
+## 19. Acceptance criteria for v1
 
 v1 is complete when:
 
